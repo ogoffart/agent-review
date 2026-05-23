@@ -268,6 +268,7 @@ function render() {
   if (state.diff?.commit) {
     root.appendChild(renderCommitMessage(state.diff.commit));
   }
+  detectMovedLines(files);
   files.forEach((f, i) => root.appendChild(renderFile(f, i)));
   renderInlineComments();
 }
@@ -360,8 +361,6 @@ function renderFile(file, idx) {
   table.dataset.lang = file.language || '';
   const tbody = document.createElement('tbody');
   table.appendChild(tbody);
-
-  detectMovedLines(file);
 
   let prevNewEnd = 0;     // last new-line number rendered so far (0 = start of file)
   let prevOldEnd = 0;
@@ -512,31 +511,36 @@ async function expandGap(file, gap, rowEl) {
   renderInlineComments();   // re-anchor any comments hidden in the gap
 }
 
-function detectMovedLines(file) {
+function detectMovedLines(files) {
   // A line counts as "moved" if its trimmed text (length > 3 to avoid
   // pairing trivial lines like "}" or " ") appears as both a deletion
-  // and an addition somewhere in this file. Pair them FIFO so each
-  // del/add only matches once.
+  // and an addition somewhere in the diff. Detection is global across
+  // all files, so a block lifted from one file into another is shaded
+  // as moved instead of pure del + pure add.
   const dels = new Map();
-  for (const h of file.hunks) {
-    for (const l of h.lines) {
-      l.moved = false;  // reset across re-renders
-      if (l.type === 'del') {
-        const t = l.text;
-        if (t.trim().length <= 3) continue;
-        if (!dels.has(t)) dels.set(t, []);
-        dels.get(t).push(l);
+  for (const file of files) {
+    for (const h of file.hunks) {
+      for (const l of h.lines) {
+        l.moved = false;  // reset across re-renders
+        if (l.type === 'del') {
+          const t = l.text;
+          if (t.trim().length <= 3) continue;
+          if (!dels.has(t)) dels.set(t, []);
+          dels.get(t).push(l);
+        }
       }
     }
   }
-  for (const h of file.hunks) {
-    for (const l of h.lines) {
-      if (l.type === 'add') {
-        const matches = dels.get(l.text);
-        if (matches && matches.length) {
-          const del = matches.shift();
-          del.moved = true;
-          l.moved = true;
+  for (const file of files) {
+    for (const h of file.hunks) {
+      for (const l of h.lines) {
+        if (l.type === 'add') {
+          const matches = dels.get(l.text);
+          if (matches && matches.length) {
+            const del = matches.shift();
+            del.moved = true;
+            l.moved = true;
+          }
         }
       }
     }
@@ -555,18 +559,20 @@ function computeWordDiffs(lines, language) {
     while (k < lines.length && lines[k].type === 'add') k++;
     const delCount = j - i;
     const addCount = k - j;
-    if (delCount > 0 && delCount === addCount) {
-      for (let p = 0; p < delCount; p++) {
-        const a = lines[i + p].text;
-        const b = lines[j + p].text;
-        const parts = Diff.diffWordsWithSpace(a, b);
-        out[i + p] = parts.filter(x => !x.added).map(x =>
-          x.removed ? `<span class="word">${escapeHTML(x.value)}</span>` : escapeHTML(x.value)
-        ).join('');
-        out[j + p] = parts.filter(x => !x.removed).map(x =>
-          x.added ? `<span class="word">${escapeHTML(x.value)}</span>` : escapeHTML(x.value)
-        ).join('');
-      }
+    // Pair the first min(delCount, addCount) lines for word diff. The
+    // surplus on whichever side keeps its plain line highlight — it's a
+    // pure delete or pure add, which jsdiff can't usefully word-split.
+    const pairs = Math.min(delCount, addCount);
+    for (let p = 0; p < pairs; p++) {
+      const a = lines[i + p].text;
+      const b = lines[j + p].text;
+      const parts = Diff.diffWordsWithSpace(a, b);
+      out[i + p] = parts.filter(x => !x.added).map(x =>
+        x.removed ? `<span class="word">${escapeHTML(x.value)}</span>` : escapeHTML(x.value)
+      ).join('');
+      out[j + p] = parts.filter(x => !x.removed).map(x =>
+        x.added ? `<span class="word">${escapeHTML(x.value)}</span>` : escapeHTML(x.value)
+      ).join('');
     }
     i = k > i ? k : i + 1;
   }

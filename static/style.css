@@ -385,8 +385,18 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
   color: var(--accent);
   border-color: var(--accent);
 }
-.diff-table tr.add td.content .word { background: var(--add-word); border-radius: 2px; }
-.diff-table tr.del td.content .word { background: var(--del-word); border-radius: 2px; }
+.diff-table tr.add td.content .word,
+.diff-table tr.del td.content .word {
+  border-radius: 2px;
+  padding: 0 1px;
+  font-weight: 600;
+}
+.diff-table tr.add td.content .word { background: var(--add-word); }
+.diff-table tr.del td.content .word {
+  background: var(--del-word);
+  text-decoration: line-through;
+  text-decoration-color: rgba(0, 0, 0, 0.35);
+}
 
 .diff-table tr.comment-row-tr td {
   background: transparent; padding: 6px;
