@@ -398,7 +398,12 @@ function renderFile(file, idx) {
         };
       }
     }
-    tbody.appendChild(makeHunkRow(file, hunk, gap));
+    // Suppress the @@ separator when the hunk starts at line 0 — the
+    // file didn't exist on that side (new file, or deleted file), so
+    // there's no preceding context to mark.
+    if (hunk.old_start !== 0 && hunk.new_start !== 0) {
+      tbody.appendChild(makeHunkRow(file, hunk, gap));
+    }
 
     const lines = hunk.lines;
     const wordHTML = computeWordDiffs(lines, file.language);
