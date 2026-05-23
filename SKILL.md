@@ -78,6 +78,9 @@ Flags:
 - `--host 127.0.0.1` (default) for local-only; `0.0.0.0` for LAN.
 - `--comments PATH` — override comments JSON location (defaults to
   `<repo>/.agent-review-comments.json`).
+- `--https` — serve over HTTPS using a self-signed cert cached at
+  `~/.cache/agent-review/`. Browsers warn once per device, then
+  proceed. Requires the `openssl` CLI.
 
 ## How to read comments back
 

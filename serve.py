@@ -603,6 +603,35 @@ class ThreadingServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     allow_reuse_address = True
 
 
+def ensure_self_signed_cert() -> tuple[Path, Path]:
+    """Return (cert_path, key_path), generating a self-signed pair on first
+    use and caching it under ~/.cache/agent-review/. Regenerates if the
+    cert is expired or missing. Requires the `openssl` CLI on PATH."""
+    cache_dir = Path.home() / ".cache" / "agent-review"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cert = cache_dir / "cert.pem"
+    key = cache_dir / "key.pem"
+    if cert.exists() and key.exists():
+        # Check expiry: regenerate if cert expires within 30 days.
+        r = subprocess.run(
+            ["openssl", "x509", "-in", str(cert), "-checkend", str(30 * 86400), "-noout"],
+            capture_output=True,
+        )
+        if r.returncode == 0:
+            return cert, key
+    r = subprocess.run(
+        ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-sha256",
+         "-days", "365", "-nodes",
+         "-keyout", str(key), "-out", str(cert),
+         "-subj", "/CN=agent-review",
+         "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1"],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0:
+        raise RuntimeError(f"openssl failed: {r.stderr.strip() or r.stdout.strip()}")
+    return cert, key
+
+
 def main() -> int:
     import secrets
     global REPO, COMMENTS_PATH, TOKEN
@@ -623,6 +652,10 @@ def main() -> int:
     ap.add_argument("--token", default=None,
                     help="URL path prefix used as a shared-secret guard. "
                          "Default: a fresh 12-char hex token. Use '' to disable.")
+    ap.add_argument("--https", action="store_true",
+                    help="Serve over HTTPS using a cached self-signed "
+                         "certificate at ~/.cache/agent-review/. Browsers "
+                         "will warn once per device.")
     args = ap.parse_args()
 
     REPO = Path(args.repo).resolve()
@@ -638,6 +671,18 @@ def main() -> int:
     COMMENTS_PATH = Path(args.comments) if args.comments else (REPO / ".agent-review-comments.json")
 
     srv = ThreadingServer((args.host, args.port), Handler)
+    scheme = "http"
+    if args.https:
+        import ssl
+        try:
+            cert, key = ensure_self_signed_cert()
+        except RuntimeError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 3
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(certfile=str(cert), keyfile=str(key))
+        srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
+        scheme = "https"
     path_part = f"/{TOKEN}/" if TOKEN else "/"
     display_host = args.host
     if display_host == "0.0.0.0":
@@ -647,7 +692,7 @@ def main() -> int:
             display_host = socket.gethostbyname(socket.gethostname())
         except Exception:
             pass
-    url = f"http://{display_host}:{args.port}{path_part}"
+    url = f"{scheme}://{display_host}:{args.port}{path_part}"
     print(f"agent-review serving {REPO}")
     print(f"  comments: {COMMENTS_PATH}")
     print(f"  token:    {TOKEN or '(disabled)'}")

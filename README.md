@@ -15,7 +15,9 @@ python3 serve.py --repo /path/to/your/repo --port 8765
 ```
 
 Then open `http://127.0.0.1:8765/`. Pass `--host 0.0.0.0` to expose on
-your LAN (useful for reviewing from a phone).
+your LAN (useful for reviewing from a phone). Pass `--https` to serve
+over TLS with a cached self-signed certificate; browsers warn once per
+device, then proceed.
 
 ## Modes
 
