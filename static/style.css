@@ -321,7 +321,11 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
 .file-thread-block {
   position: sticky;
   left: 8px;
-  display: block;
+  /* Flex column drops the anonymous whitespace text nodes between
+     siblings — without that, each gap renders an empty line of the
+     inherited line-height: 1.5 from .diff-table. */
+  display: flex;
+  flex-direction: column;
   /* Fit within the visible scrollport: viewport minus the sidebar, the
      resizer, and a small breathing margin on the right so the box is
      fully visible without horizontal scrolling. */
@@ -423,12 +427,11 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
  * the foreground. */
 .diff-table tr.add td.content .word,
 .diff-table tr.del td.content .word {
-  /* Render as an inline box that occupies the full line-height of the
-     containing row, so the lighter "unchanged" tint paints from row
-     top to row bottom without leaving an outline above/below. */
-  display: inline-block;
-  line-height: 1.5;
-  vertical-align: top;
+  /* Extend the background through the line's leading (line-height 1.5
+     means 0.25em of leading above and below the glyph box). */
+  padding: 0.25em 0;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 .diff-table tr.add td.content .word { background: var(--add-bg); }
 .diff-table tr.del td.content .word { background: var(--del-bg); }
