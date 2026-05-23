@@ -308,6 +308,30 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
   background: var(--accent); border-color: var(--accent); color: white;
 }
 .file-thread-block { padding: 6px 12px; background: var(--comment-bg); border-bottom: 1px solid var(--comment-border); }
+
+/* Comment forms and threads should NOT inherit the diff-table's full
+ * width (which stretches to the widest line). Stick them to the left
+ * edge of the visible scrollport so they stay readable while the diff
+ * scrolls horizontally. */
+.comment-form-row td,
+.comment-thread-row td { padding: 0; }
+.comment-form-row td > *,
+.comment-thread-row td > *,
+.file-thread-block {
+  position: sticky;
+  left: 8px;
+  display: block;
+  width: calc(100vw - var(--sidebar-w, 280px) - 40px);
+  max-width: 900px;
+  box-sizing: border-box;
+}
+@media (max-width: 820px) {
+  .comment-form-row td > *,
+  .comment-thread-row td > *,
+  .file-thread-block {
+    width: calc(100vw - 16px);
+  }
+}
 .file-header .uncommitted {
   font-size: 10px; padding: 1px 6px; border-radius: 10px;
   background: var(--comment-bg); color: var(--comment-border);
