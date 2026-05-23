@@ -146,10 +146,12 @@ def parse_unified_diff(text: str) -> list[dict]:
                     "type": "del", "old": old_ln, "new": None, "text": raw[1:],
                 })
                 old_ln += 1
-            elif raw.startswith(" ") or raw == "":
+            elif raw.startswith(" "):
+                # Context lines always carry a space prefix in unified diff
+                # output; truly empty entries here are trailing newlines.
                 cur_hunk["lines"].append({
                     "type": "ctx", "old": old_ln, "new": new_ln,
-                    "text": raw[1:] if raw else "",
+                    "text": raw[1:],
                 })
                 old_ln += 1
                 new_ln += 1
