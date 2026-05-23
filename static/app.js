@@ -411,13 +411,20 @@ function createLineRow(line, file, wordHTMLOverride) {
   row.dataset.line = lineForGutter;
   row.dataset.path = sideForGutter === 'old' ? (file.old_path || '') : (file.new_path || '');
 
-  const contentHTML = wordHTMLOverride != null
-    ? wordHTMLOverride
-    : highlightCode(line.text, file.language);
+  let contentHTML, tailUnchanged = false;
+  if (wordHTMLOverride != null && typeof wordHTMLOverride === 'object') {
+    contentHTML = wordHTMLOverride.html;
+    tailUnchanged = wordHTMLOverride.tailUnchanged;
+  } else if (wordHTMLOverride != null) {
+    contentHTML = wordHTMLOverride;
+  } else {
+    contentHTML = highlightCode(line.text, file.language);
+  }
   const sym = line.type === 'add' ? '+' : line.type === 'del' ? '−' : ' ';
+  const tdClass = 'content' + (tailUnchanged ? ' tail-light' : '');
   row.innerHTML = `
     <td class="gutter" title="Add comment">+</td>
-    <td class="content"><span class="sym">${sym} </span>${contentHTML}</td>
+    <td class="${tdClass}"><span class="line"><span class="sym">${sym} </span>${contentHTML}</span></td>
   `;
   row.querySelector('.gutter').onclick = (e) => {
     e.stopPropagation();
@@ -576,18 +583,32 @@ function computeWordDiffs(lines, language) {
       const delMin = Math.max(3, Math.ceil(a.length * 0.1));
       const addMin = Math.max(3, Math.ceil(b.length * 0.1));
       let posA = 0, posB = 0;
+      let delTail = false, addTail = false;
       for (const x of parts) {
         const len = x.value.length;
         if (x.removed) { posA += len; }
         else if (x.added) { posB += len; }
         else {
-          if (len >= delMin) delRanges.push([posA, posA + len]);
-          if (len >= addMin) addRanges.push([posB, posB + len]);
+          // If this unchanged chunk ends at the end of its line, keep it
+          // regardless of size — a trailing match (often the `;` or `)`)
+          // anchors the right edge of the line as unchanged.
+          const isTailA = posA + len === a.length;
+          const isTailB = posB + len === b.length;
+          if (len >= delMin || isTailA) delRanges.push([posA, posA + len]);
+          if (len >= addMin || isTailB) addRanges.push([posB, posB + len]);
+          if (isTailA) delTail = true;
+          if (isTailB) addTail = true;
           posA += len; posB += len;
         }
       }
-      out[i + p] = highlightWithWordSpans(a, language, delRanges);
-      out[j + p] = highlightWithWordSpans(b, language, addRanges);
+      out[i + p] = {
+        html: highlightWithWordSpans(a, language, delRanges),
+        tailUnchanged: delTail,
+      };
+      out[j + p] = {
+        html: highlightWithWordSpans(b, language, addRanges),
+        tailUnchanged: addTail,
+      };
     }
     i = k > i ? k : i + 1;
   }

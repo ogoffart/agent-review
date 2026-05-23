@@ -342,6 +342,12 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
 .diff-table tr.add.moved td.gutter { background: var(--add-line-moved); }
 .diff-table tr.del.moved td.content { background: var(--del-line-moved); }
 .diff-table tr.del.moved td.gutter { background: var(--del-line-moved); }
+/* tail-light: line ends with an unchanged segment — fill the area to
+ * the right of the actual text with the lighter "unchanged" tint. */
+.diff-table tr.add td.content.tail-light { background: var(--add-bg); }
+.diff-table tr.add td.content.tail-light .line { background: var(--add-line); }
+.diff-table tr.del td.content.tail-light { background: var(--del-bg); }
+.diff-table tr.del td.content.tail-light .line { background: var(--del-line); }
 .diff-table td.content .sym {
   color: var(--muted);
   user-select: none;
