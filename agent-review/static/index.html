@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>agent-review</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github.min.css">
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/diff@5.2.0/dist/diff.min.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header>
+    <button id="sidebar-toggle" aria-label="Toggle sidebar" title="Toggle sidebar">☰</button>
+    <div class="brand">agent-review</div>
+    <div class="info" id="repo-info">…</div>
+    <nav class="modes">
+      <button data-mode="working" class="mode active">Working</button>
+      <button data-mode="branch" class="mode">vs <span id="base-name">base</span></button>
+    </nav>
+    <div class="spacer"></div>
+    <button id="refresh" title="Reload diff and comments">↻</button>
+  </header>
+  <div id="sidebar-backdrop"></div>
+
+  <main>
+    <aside id="sidebar">
+      <section>
+        <h2>Files <span id="file-count" class="muted"></span></h2>
+        <ul id="file-list"></ul>
+      </section>
+      <section>
+        <h2>Comments <span id="comment-count" class="muted"></span></h2>
+        <ul id="comment-list"></ul>
+      </section>
+      <section>
+        <h2>Recent commits</h2>
+        <ul id="commit-list"></ul>
+      </section>
+    </aside>
+
+    <section id="diff-pane">
+      <div id="diff-empty" class="empty">No changes.</div>
+      <div id="diff-root"></div>
+    </section>
+  </main>
+
+  <template id="comment-form-tpl">
+    <div class="comment-form">
+      <textarea placeholder="Comment for the agent…" rows="3"></textarea>
+      <div class="actions">
+        <button class="cancel">Cancel</button>
+        <button class="submit primary">Save</button>
+      </div>
+    </div>
+  </template>
+</body>
+</html>
