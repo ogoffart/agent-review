@@ -1,1 +1,3 @@
 .agent-review-comments.json
+__pycache__/
+*.pyc
