@@ -234,7 +234,7 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
 .comment-row .where { color: var(--accent); font-family: var(--mono); font-size: 11px; }
 
 #diff-pane {
-  overflow-y: auto;
+  overflow: auto;          /* single scroll region for all files, both axes */
   padding: 12px;
 }
 .empty { color: var(--muted); padding: 24px; text-align: center; }
@@ -244,7 +244,10 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
   border: 1px solid var(--border);
   border-radius: 8px;
   margin-bottom: 14px;
-  overflow: hidden;
+  /* Each file shrinks/grows to its content's natural width; the parent
+     #diff-pane provides the single shared horizontal scrollbar. */
+  width: max-content;
+  min-width: 100%;
 }
 .file-header {
   padding: 8px 12px;
@@ -311,7 +314,10 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
 }
 
 .diff-table {
-  width: 100%;
+  /* Grow to the widest line so the file's parent gets a real scrollWidth;
+     min-width keeps short files filling the pane. */
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
   font-family: var(--mono);
   font-size: calc(var(--code-base) * var(--zoom));
