@@ -193,48 +193,117 @@ function renderFile(file, idx) {
   const tbody = document.createElement('tbody');
   table.appendChild(tbody);
 
-  for (const hunk of file.hunks) {
+  let prevNewEnd = 0;     // last new-line number rendered so far (0 = start of file)
+  let prevOldEnd = 0;
+  const canExpand = file.status === 'modified' || file.status === 'renamed';
+
+  for (let h = 0; h < file.hunks.length; h++) {
+    const hunk = file.hunks[h];
+
+    if (canExpand) {
+      const gapNewStart = prevNewEnd + 1;
+      const gapNewEnd = hunk.new_start - 1;
+      const gapOldStart = prevOldEnd + 1;
+      const gapOldEnd = hunk.old_start - 1;
+      if (gapNewEnd >= gapNewStart) {
+        tbody.appendChild(makeExpandRow(file, {
+          oldStart: gapOldStart, oldEnd: gapOldEnd,
+          newStart: gapNewStart, newEnd: gapNewEnd,
+        }));
+      }
+    }
+
     const tr = document.createElement('tr');
     tr.className = 'hunk';
     tr.innerHTML = `<td colspan="2">@@ -${hunk.old_start},${hunk.old_lines} +${hunk.new_start},${hunk.new_lines} @@${escapeHTML(hunk.header || '')}</td>`;
     tbody.appendChild(tr);
 
     const lines = hunk.lines;
-    // Pre-compute word-diff for paired contiguous del/add groups of equal length.
     const wordHTML = computeWordDiffs(lines, file.language);
-
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const row = document.createElement('tr');
-      const cls = line.type === 'add' ? 'add' : line.type === 'del' ? 'del' : 'ctx';
-      row.className = cls;
-      row.dataset.idx = i;
-      const sideForGutter = line.type === 'del' ? 'old' : 'new';
-      const lineForGutter = line.type === 'del' ? line.old : line.new;
-      row.dataset.side = sideForGutter;
-      row.dataset.line = lineForGutter;
-      row.dataset.path = sideForGutter === 'old' ? (file.old_path || '') : (file.new_path || '');
-
-      let contentHTML;
-      if (wordHTML[i] != null) {
-        contentHTML = wordHTML[i];
-      } else {
-        contentHTML = highlightCode(line.text, file.language);
-      }
-      const sym = line.type === 'add' ? '+' : line.type === 'del' ? '−' : ' ';
-      row.innerHTML = `
-        <td class="gutter" title="Add comment">+</td>
-        <td class="content"><span class="sym">${sym} </span>${contentHTML}</td>
-      `;
-      row.querySelector('.gutter').onclick = (e) => {
-        e.stopPropagation();
-        openCommentForm(row);
-      };
-      tbody.appendChild(row);
+      tbody.appendChild(createLineRow(lines[i], file, wordHTML[i]));
     }
+
+    prevNewEnd = hunk.new_start + hunk.new_lines - 1;
+    prevOldEnd = hunk.old_start + hunk.old_lines - 1;
   }
   wrap.appendChild(table);
   return wrap;
+}
+
+function createLineRow(line, file, wordHTMLOverride) {
+  const row = document.createElement('tr');
+  const cls = line.type === 'add' ? 'add' : line.type === 'del' ? 'del' : 'ctx';
+  row.className = cls;
+  const sideForGutter = line.type === 'del' ? 'old' : 'new';
+  const lineForGutter = line.type === 'del' ? line.old : line.new;
+  row.dataset.side = sideForGutter;
+  row.dataset.line = lineForGutter;
+  row.dataset.path = sideForGutter === 'old' ? (file.old_path || '') : (file.new_path || '');
+
+  const contentHTML = wordHTMLOverride != null
+    ? wordHTMLOverride
+    : highlightCode(line.text, file.language);
+  const sym = line.type === 'add' ? '+' : line.type === 'del' ? '−' : ' ';
+  row.innerHTML = `
+    <td class="gutter" title="Add comment">+</td>
+    <td class="content"><span class="sym">${sym} </span>${contentHTML}</td>
+  `;
+  row.querySelector('.gutter').onclick = (e) => {
+    e.stopPropagation();
+    openCommentForm(row);
+  };
+  return row;
+}
+
+function makeExpandRow(file, gap) {
+  const row = document.createElement('tr');
+  row.className = 'expand';
+  const count = gap.newEnd - gap.newStart + 1;
+  row.innerHTML = `<td colspan="2"><button class="expand-btn">↕ Show ${count} more line${count === 1 ? '' : 's'}</button></td>`;
+  row.querySelector('.expand-btn').onclick = async () => {
+    await expandGap(file, gap, row);
+  };
+  return row;
+}
+
+const blobCache = new Map();
+
+function contextRef() {
+  // For working mode the unchanged lines are the same in HEAD and the
+  // working tree, so HEAD is fine. Otherwise use the "to" side.
+  if (state.mode === 'working') return 'HEAD';
+  return state.diff?.head || 'HEAD';
+}
+
+async function fetchBlobLines(ref, path) {
+  const key = `${ref}::${path}`;
+  if (blobCache.has(key)) return blobCache.get(key);
+  const data = await api(`/api/blob?ref=${encodeURIComponent(ref)}&path=${encodeURIComponent(path)}`);
+  blobCache.set(key, data.lines);
+  return data.lines;
+}
+
+async function expandGap(file, gap, rowEl) {
+  const ref = contextRef();
+  const path = file.new_path || file.old_path;
+  if (!path) return;
+  let blob;
+  try {
+    blob = await fetchBlobLines(ref, path);
+  } catch (e) {
+    rowEl.querySelector('.expand-btn').textContent = `error: ${e.message}`;
+    return;
+  }
+  const fragment = document.createDocumentFragment();
+  for (let n = gap.newStart, o = gap.oldStart; n <= gap.newEnd; n++, o++) {
+    const text = blob[n - 1] ?? '';
+    fragment.appendChild(createLineRow({
+      type: 'ctx', old: o, new: n, text,
+    }, file));
+  }
+  rowEl.replaceWith(fragment);
+  renderInlineComments();   // re-anchor any comments hidden in the gap
 }
 
 function computeWordDiffs(lines, language) {

@@ -259,6 +259,25 @@ main {
   font-style: italic;
   padding: 4px 8px;
 }
+.diff-table tr.expand td {
+  background: var(--border-soft);
+  padding: 2px 8px;
+  text-align: center;
+}
+.diff-table tr.expand .expand-btn {
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--muted);
+  padding: 1px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+}
+.diff-table tr.expand .expand-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
 .diff-table tr.add td.content .word { background: var(--add-word); border-radius: 2px; }
 .diff-table tr.del td.content .word { background: var(--del-word); border-radius: 2px; }
 

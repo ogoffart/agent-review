@@ -421,6 +421,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if url.path == "/api/branches":
                 self._json(200, {"branches": get_branches()})
                 return
+            if url.path == "/api/blob":
+                ref = q.get("ref", ["HEAD"])[0]
+                path = q.get("path", [""])[0]
+                if not path:
+                    self._json(400, {"error": "path required"})
+                    return
+                out = git("show", f"{ref}:{path}", check=False)
+                self._json(200, {"lines": out.splitlines()})
+                return
             if url.path == "/api/comments":
                 self._json(200, load_comments())
                 return
