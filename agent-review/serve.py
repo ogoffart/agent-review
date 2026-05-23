@@ -26,6 +26,7 @@ HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$")
 REPO: Path = Path.cwd()
 COMMENTS_PATH: Path = Path()
 COMMENTS_LOCK = threading.Lock()
+TOKEN: str = ""  # required URL prefix; empty disables the check
 
 EXT_LANG = {
     ".rs": "rust", ".py": "python", ".js": "javascript", ".mjs": "javascript",
@@ -407,6 +408,28 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             raise ValueError("invalid json body")
 
+    def _strip_token(self, raw_path: str) -> str | None:
+        """Return the path with the token prefix stripped, or None when the
+        token is missing/wrong. Sends a 404 itself in the latter case so
+        unauthenticated probes can't distinguish a wrong token from a
+        random missing route. Issues a redirect when the path is exactly
+        '/<token>' (no trailing slash) so relative static URLs resolve."""
+        if not TOKEN:
+            return raw_path
+        url = urllib.parse.urlparse(raw_path)
+        prefix = f"/{TOKEN}"
+        if url.path == prefix:
+            self.send_response(301)
+            self.send_header("Location", prefix + "/" + (("?" + url.query) if url.query else ""))
+            self.end_headers()
+            return None
+        if not url.path.startswith(prefix + "/"):
+            self._json(404, {"error": "not found"})
+            return None
+        # Rebuild the path without the token prefix.
+        new_path = url.path[len(prefix):] or "/"
+        return new_path + (("?" + url.query) if url.query else "")
+
     def _serve_static(self, rel: str) -> None:
         if not rel or rel == "/":
             rel = "index.html"
@@ -426,7 +449,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):  # noqa: N802
         try:
-            url = urllib.parse.urlparse(self.path)
+            stripped = self._strip_token(self.path)
+            if stripped is None:
+                return
+            url = urllib.parse.urlparse(stripped)
             q = urllib.parse.parse_qs(url.query)
             if url.path == "/" or url.path == "/index.html":
                 self._serve_static("index.html")
@@ -479,7 +505,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         try:
-            url = urllib.parse.urlparse(self.path)
+            stripped = self._strip_token(self.path)
+            if stripped is None:
+                return
+            url = urllib.parse.urlparse(stripped)
             if url.path == "/api/comments":
                 body = self._read_json()
                 entry = add_comment(body)
@@ -503,7 +532,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_PATCH(self):  # noqa: N802
         try:
-            url = urllib.parse.urlparse(self.path)
+            stripped = self._strip_token(self.path)
+            if stripped is None:
+                return
+            url = urllib.parse.urlparse(stripped)
             if url.path.startswith("/api/comments/"):
                 cid = url.path[len("/api/comments/"):]
                 body = self._read_json()
@@ -521,7 +553,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_DELETE(self):  # noqa: N802
         try:
-            url = urllib.parse.urlparse(self.path)
+            stripped = self._strip_token(self.path)
+            if stripped is None:
+                return
+            url = urllib.parse.urlparse(stripped)
             if url.path.startswith("/api/comments/"):
                 cid = url.path[len("/api/comments/"):]
                 if not delete_comment(cid):
@@ -540,7 +575,8 @@ class ThreadingServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
 
 def main() -> int:
-    global REPO, COMMENTS_PATH
+    import secrets
+    global REPO, COMMENTS_PATH, TOKEN
     ap = argparse.ArgumentParser(description="Local web UI for reviewing agent diffs.")
     ap.add_argument("--repo", default=os.environ.get("AGENT_REVIEW_REPO", os.getcwd()),
                     help="git repo to review (default: cwd)")
@@ -548,9 +584,13 @@ def main() -> int:
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--comments", default=None,
                     help="comments JSON file (default: {repo}/.agent-review-comments.json)")
+    ap.add_argument("--token", default=None,
+                    help="URL path prefix used as a shared-secret guard. "
+                         "Default: a fresh 12-char hex token. Use '' to disable.")
     args = ap.parse_args()
 
     REPO = Path(args.repo).resolve()
+    TOKEN = args.token if args.token is not None else secrets.token_hex(6)
     if not (REPO / ".git").exists() and not (REPO / ".git").is_file():
         # might still be inside a worktree; let git decide
         r = subprocess.run(["git", "-C", str(REPO), "rev-parse", "--is-inside-work-tree"],
@@ -562,9 +602,19 @@ def main() -> int:
     COMMENTS_PATH = Path(args.comments) if args.comments else (REPO / ".agent-review-comments.json")
 
     srv = ThreadingServer((args.host, args.port), Handler)
-    url = f"http://{args.host}:{args.port}/"
+    path_part = f"/{TOKEN}/" if TOKEN else "/"
+    display_host = args.host
+    if display_host == "0.0.0.0":
+        # Help with phone access by also showing a routable host if we can.
+        try:
+            import socket
+            display_host = socket.gethostbyname(socket.gethostname())
+        except Exception:
+            pass
+    url = f"http://{display_host}:{args.port}{path_part}"
     print(f"agent-review serving {REPO}")
     print(f"  comments: {COMMENTS_PATH}")
+    print(f"  token:    {TOKEN or '(disabled)'}")
     print(f"  open:     {url}")
     try:
         srv.serve_forever()

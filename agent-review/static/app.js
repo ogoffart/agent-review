@@ -16,8 +16,11 @@ const state = {
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
+// The page may be mounted under a /<token>/ prefix; derive the API base
+// from window.location so calls work without any hard-coded prefix.
+const BASE = window.location.pathname.replace(/\/index\.html$/, '').replace(/\/$/, '');
 async function api(path, opts) {
-  const r = await fetch(path, opts);
+  const r = await fetch(BASE + path, opts);
   if (!r.ok) throw new Error(`${path}: ${r.status}`);
   return r.json();
 }
