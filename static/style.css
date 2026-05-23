@@ -439,7 +439,7 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
   border: 1px solid var(--comment-border);
   border-radius: 6px;
   padding: 4px 8px;
-  margin: 2px 0;
+  margin: 0;
   white-space: normal;
   font-family: system-ui, sans-serif;
   font-size: 13px;
@@ -524,11 +524,8 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
 }
 
 .comment-form {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 4px 8px;
-  margin: 2px 0;
+  padding: 0;
+  margin: 0;
   white-space: normal;
   font-family: system-ui, sans-serif;
 }
