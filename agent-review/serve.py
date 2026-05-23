@@ -165,6 +165,18 @@ def get_diff(mode: str, base: str | None = None, sha: str | None = None,
              head: str | None = None) -> dict:
     if mode == "working":
         diff_text = git("diff", "--no-color", "HEAD")
+        # Include untracked files so they show up in the sidebar too.
+        # `git diff --no-index` exits 1 when files differ — expected here.
+        untracked = git(
+            "ls-files", "--others", "--exclude-standard", "-z",
+        ).split("\0")
+        for path in untracked:
+            if not path:
+                continue
+            diff_text += git(
+                "diff", "--no-color", "--no-index", "--",
+                "/dev/null", path, check=False,
+            )
         return {
             "mode": "working",
             "base": "HEAD",
