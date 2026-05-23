@@ -388,6 +388,13 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
 /* .word marks the *unchanged* portion of a word-diff line; it gets a
  * lighter background than the line tint so the real change reads as
  * the foreground. */
+.diff-table tr.add td.content .word,
+.diff-table tr.del td.content .word {
+  /* fill the full row height; the parent has line-height: 1.5 */
+  padding: 0.25em 0;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
 .diff-table tr.add td.content .word { background: var(--add-bg); }
 .diff-table tr.del td.content .word { background: var(--del-bg); }
 
