@@ -211,6 +211,18 @@ def get_diff(mode: str, base: str | None = None, sha: str | None = None,
             "head": sha,
             "files": parse_unified_diff(diff_text),
         }
+    if mode == "range":
+        f = base
+        t = head
+        if not (f and t):
+            raise ValueError("range mode requires both 'from' (base) and 'to' (head)")
+        diff_text = git("diff", "--no-color", f, t)
+        return {
+            "mode": "range",
+            "base": f,
+            "head": t,
+            "files": parse_unified_diff(diff_text),
+        }
     raise ValueError(f"unknown mode: {mode}")
 
 

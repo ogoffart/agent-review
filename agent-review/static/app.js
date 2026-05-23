@@ -5,10 +5,12 @@ const state = {
   mode: 'working',
   base: null,
   head: null,         // branch tip to view (null = checked-out branch)
+  rangeFrom: null,    // sha picked as the "from" end of a range comparison
   diff: null,
   comments: [],
   info: null,
   branches: [],
+  commits: [],
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -28,19 +30,54 @@ async function loadInfo() {
 }
 
 async function loadCommits() {
-  const data = await api('/api/commits?limit=15');
+  const data = await api('/api/commits?limit=20');
+  state.commits = data.commits || [];
+  renderCommits();
+}
+
+function renderCommits() {
   const ul = $('#commit-list');
   ul.innerHTML = '';
-  for (const c of data.commits) {
+
+  if (state.rangeFrom) {
+    const banner = document.createElement('li');
+    banner.className = 'range-banner';
+    const short = state.rangeFrom.slice(0, 7);
+    banner.innerHTML = `Comparing from <span class="sha">${escapeHTML(short)}</span> → click another commit ⨯`;
+    banner.title = 'Click to clear';
+    banner.onclick = () => { state.rangeFrom = null; renderCommits(); };
+    ul.appendChild(banner);
+  }
+
+  for (const c of state.commits) {
     const li = document.createElement('li');
     li.className = 'commit-row';
-    li.innerHTML = `<span class="sha">${escapeHTML(c.short)}</span><span class="subj">${escapeHTML(c.subject)}</span>`;
+    if (c.sha === state.rangeFrom) li.classList.add('from-selected');
+    li.innerHTML = `
+      <button class="from-btn" title="Use as comparison base">↰</button>
+      <span class="sha">${escapeHTML(c.short)}</span>
+      <span class="subj">${escapeHTML(c.subject)}</span>
+    `;
     li.title = `${c.author} · ${c.date}\n${c.sha}`;
+    li.querySelector('.from-btn').onclick = (e) => {
+      e.stopPropagation();
+      state.rangeFrom = state.rangeFrom === c.sha ? null : c.sha;
+      renderCommits();
+    };
     li.onclick = async () => {
-      state.mode = 'commit';
-      $$('.mode').forEach(b => b.classList.remove('active'));
-      state.diff = await api(`/api/diff?mode=commit&sha=${encodeURIComponent(c.sha)}`);
+      if (state.rangeFrom && state.rangeFrom !== c.sha) {
+        state.mode = 'range';
+        $$('.mode').forEach(b => b.classList.remove('active'));
+        state.diff = await api(
+          `/api/diff?mode=range&base=${encodeURIComponent(state.rangeFrom)}&head=${encodeURIComponent(c.sha)}`
+        );
+      } else {
+        state.mode = 'commit';
+        $$('.mode').forEach(b => b.classList.remove('active'));
+        state.diff = await api(`/api/diff?mode=commit&sha=${encodeURIComponent(c.sha)}`);
+      }
       render();
+      closeSidebarIfMobile();
     };
     ul.appendChild(li);
   }
@@ -398,9 +435,11 @@ function cssEscape(s) {
 
 function setMode(mode) {
   state.mode = mode;
-  state.head = null;  // clicking the mode buttons resets to the current branch
+  state.head = null;       // clicking the mode buttons resets to the current branch
+  state.rangeFrom = null;  // and clears any pending range comparison
   $$('.mode').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
   loadDiff();
+  renderCommits();
 }
 
 const ZOOM_STEPS = [0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75];
