@@ -381,6 +381,9 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
   padding: 2px 8px;
   text-align: center;
 }
+.diff-table tr.expand.trailing td {
+  text-align: left;   /* trailing 'Show remaining lines' sits flush left */
+}
 .diff-table .expand-btn {
   background: transparent;
   border: 1px dashed var(--border);
