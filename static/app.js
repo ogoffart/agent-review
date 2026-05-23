@@ -128,7 +128,7 @@ function renderBranches() {
       <span class="name">${escapeHTML(b.name)}</span>
       <span class="muted sha">${escapeHTML(b.sha)}</span>
     `;
-    li.title = `${b.subject}\n${b.date}`;
+    li.title = `${b.name}\n${b.subject}\n${b.date}`;
     li.onclick = () => switchToBranch(b.name);
     ul.appendChild(li);
   }
@@ -157,6 +157,7 @@ function render() {
     const additions = f.hunks.reduce((s, h) => s + h.lines.filter(l => l.type === 'add').length, 0);
     const deletions = f.hunks.reduce((s, h) => s + h.lines.filter(l => l.type === 'del').length, 0);
     li.innerHTML = `${escapeHTML(name)} <span class="muted">+${additions} −${deletions}</span>`;
+    li.title = name;
     li.onclick = () => document.getElementById(`file-${i}`).scrollIntoView({ behavior: 'smooth', block: 'start' });
     fileList.appendChild(li);
   });
@@ -635,6 +636,35 @@ function closeSidebarIfMobile() {
   }
 }
 
+const SIDEBAR_MIN = 160, SIDEBAR_MAX = 720;
+
+function applySidebarWidth(px) {
+  const w = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, px));
+  document.documentElement.style.setProperty('--sidebar-w', w + 'px');
+  localStorage.setItem('agent-review-sidebar-w', String(w));
+}
+
+function initSidebarResizer() {
+  const stored = parseInt(localStorage.getItem('agent-review-sidebar-w') || '', 10);
+  if (Number.isFinite(stored)) applySidebarWidth(stored);
+  const handle = $('#sidebar-resizer');
+  handle.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    document.body.classList.add('resizing-sidebar');
+    const move = (ev) => applySidebarWidth(ev.clientX);
+    const up = (ev) => {
+      handle.releasePointerCapture(e.pointerId);
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      document.body.classList.remove('resizing-sidebar');
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+  });
+  handle.addEventListener('dblclick', () => applySidebarWidth(280));
+}
+
 window.addEventListener('DOMContentLoaded', async () => {
   applyZoom(loadZoom());
   $('#zoom-out').onclick = () => nudgeZoom(-1);
@@ -654,6 +684,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   };
   $('#sidebar-toggle').onclick = () => document.body.classList.toggle('sidebar-open');
   $('#sidebar-backdrop').onclick = () => document.body.classList.remove('sidebar-open');
+  initSidebarResizer();
   // Close mobile sidebar after picking a file/comment/commit
   $('#sidebar').addEventListener('click', (e) => {
     if (e.target.closest('li')) closeSidebarIfMobile();

@@ -109,9 +109,20 @@ body.sidebar-open #sidebar-backdrop { display: block; }
 main {
   flex: 1;
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: var(--sidebar-w, 280px) 4px 1fr;
   overflow: hidden;
 }
+
+#sidebar-resizer {
+  cursor: col-resize;
+  background: transparent;
+  border-left: 1px solid var(--border);
+  transition: background .12s ease-out;
+}
+#sidebar-resizer:hover, body.resizing-sidebar #sidebar-resizer {
+  background: var(--accent);
+}
+body.resizing-sidebar { cursor: col-resize; user-select: none; }
 
 #sidebar {
   background: var(--panel);
@@ -423,6 +434,7 @@ main {
 @media (max-width: 820px) {
   :root { --code-base: 11px; }   /* baseline shrinks; --zoom still applies */
   main { grid-template-columns: 1fr; }
+  #sidebar-resizer { display: none; }
   #sidebar-toggle { display: inline-block; }
   .info { display: none; }
   #sidebar {
