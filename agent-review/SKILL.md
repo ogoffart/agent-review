@@ -11,15 +11,7 @@ comments. Reviewers click `+` on any line to leave a comment; comments
 are persisted to `<repo>/.agent-review-comments.json` so the agent can
 read them with `cat` next session.
 
-The server is bundled in this skill's own directory as `serve.py`
-(alongside this `SKILL.md`). Reference it via `$HOME` so the command
-stays portable across machines:
-
-```sh
-SERVE="$HOME/.claude/skills/agent-review/serve.py"
-```
-
-Stdlib-only, no install step beyond the skill being present.
+Stdlib-only, no install step beyond having this skill on disk.
 
 ## When to use this skill
 
@@ -42,16 +34,31 @@ Do **not** use for:
 
 ## How to launch
 
-Launch in the background, then tell the user the URL. Poll
-`http://127.0.0.1:<port>/api/info` until it returns 200 before
-reporting.
+The server script `serve.py` lives in this skill's own directory
+(next to this `SKILL.md`). The install path is not fixed — it could
+be anywhere, including a symlink. Discover it from inside the agent
+session and reuse the resolved path; do **not** hard-code a path.
 
 ```sh
-python3 "$HOME/.claude/skills/agent-review/serve.py" \
+# Find this skill's directory by locating SKILL.md in known skill roots.
+SKILL_DIR=$(find "$HOME" /opt /usr/local /usr/share \
+                -type f -path '*/agent-review/SKILL.md' \
+                -o -type l -path '*/agent-review/SKILL.md' \
+                2>/dev/null | head -1 | xargs -r dirname)
+
+# Fallback: ask the user where it's installed if discovery fails.
+[ -z "$SKILL_DIR" ] && { echo "Could not locate agent-review skill"; exit 1; }
+
+python3 "$SKILL_DIR/serve.py" \
     --repo "$(pwd)" \
     --port 8765 \
     --host 0.0.0.0
 ```
+
+Use the harness's background-task facility (`run_in_background: true`)
+so the server keeps serving while you continue working. Poll
+`http://127.0.0.1:<port>/api/info` until it returns 200 before
+reporting the URL to the user.
 
 Flags:
 
@@ -61,17 +68,20 @@ Flags:
 - `--comments PATH` — override comments JSON location (defaults to
   `<repo>/.agent-review-comments.json`).
 
-Use the harness's background-task facility (`run_in_background: true`)
-so the server keeps serving while you continue working.
-
 ## How to read comments back
 
-Comments are a flat JSON file. Always read it before responding to a
-"did you see my comments?" question, and treat unresolved entries as
-actionable feedback:
+Comments are a flat JSON file. Read it before responding to a
+"did you see my comments?" question, and treat unseen / unresolved
+entries as actionable feedback:
 
 ```sh
 cat <repo>/.agent-review-comments.json
+```
+
+Or fetch just the unseen ones from the server:
+
+```sh
+curl -s 'http://127.0.0.1:8765/api/comments?unseen=1'
 ```
 
 Entry shape:
@@ -84,6 +94,8 @@ Entry shape:
   "side": "new" | "old",
   "text": "the reviewer's comment",
   "resolved": false,
+  "seen": false,
+  "replies": [{"by": "agent", "text": "fixed in <sha>", "created": "..."}],
   "created": "ISO-8601 UTC timestamp",
   "mode": "working" | "branch" | "commit" | "range",
   "base": "ref the diff was against",
@@ -91,29 +103,46 @@ Entry shape:
 }
 ```
 
-After acting on a comment, do **not** silently delete it — let the user
-mark it resolved themselves, or call
-`PATCH /api/comments/<id>` with `{"resolved": true}` if they asked you
-to clear the backlog.
+## How to acknowledge feedback
 
-## What it shows
+After acting on a comment, reply to it (which also marks it seen):
+
+```sh
+curl -s -X POST "http://127.0.0.1:8765/api/comments/<id>/replies" \
+    -H 'Content-Type: application/json' \
+    -d '{"text":"fixed in <sha>","by":"agent"}'
+```
+
+Or just mark it seen without replying:
+
+```sh
+curl -s -X PATCH "http://127.0.0.1:8765/api/comments/<id>" \
+    -H 'Content-Type: application/json' \
+    -d '{"seen":true}'
+```
+
+Do **not** silently `delete` or `resolve` comments — those actions are
+the reviewer's prerogative.
+
+## What the UI shows
 
 - **Working tree** — modified tracked files plus untracked files
   (synthesised via `git diff --no-index /dev/null <path>`).
 - **Branch vs base** — current or selected branch vs `main`/`master`.
 - **Single commit** — clickable in the sidebar.
-- **Range** — diff between two commits picked in the sidebar.
+- **Range** — pick a commit's `↰` to mark it as the comparison base,
+  then click another commit to diff between them.
 
-Sidebar lists files, posted comments, branches (current is `●`),
-and recent commits.
+Sidebar lists files, posted comments, branches (`●` for current),
+and recent commits. `A−` / `A+` in the header scale the diff font.
 
 ## Hosting on other projects
 
-The skill is project-agnostic. To review any repo:
+The skill is project-agnostic. To review any repo, pass `--repo`:
 
 ```sh
-python3 "$HOME/.claude/skills/agent-review/serve.py" --repo /path/to/repo
+python3 "$SKILL_DIR/serve.py" --repo /path/to/repo
 ```
 
 Comments land at `/path/to/repo/.agent-review-comments.json`. Suggest
-adding that filename to the project's `.gitignore`.
+the user add that filename to the project's `.gitignore`.
