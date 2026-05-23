@@ -54,5 +54,10 @@ fn main() {
     println!("after inserting d, get b = {:?}", cache.get(&"b"));
     println!("get c = {:?}", cache.get(&"c"));
     println!("get d = {:?}", cache.get(&"d"));
+    cache.put("foo", 42);
+    cache.put("bar", 99);
+    println!("after foo/bar, get d = {:?}", cache.get(&"d"));
+    println!("get foo = {:?}", cache.get(&"foo"));
+    println!("get bar = {:?}", cache.get(&"bar"));
     println!("len = {}", cache.len());
 }
