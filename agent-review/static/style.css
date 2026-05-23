@@ -304,15 +304,34 @@ main {
   }
   body.sidebar-open #sidebar { transform: translateX(0); }
   #diff-pane { padding: 8px; }
-  .file { margin-bottom: 10px; border-radius: 6px; }
+  .file {
+    margin-bottom: 10px;
+    border-radius: 6px;
+    overflow: hidden;       /* keep file block within viewport */
+  }
   .file-header { padding: 6px 8px; font-size: 12px; }
+  .file { overflow-x: auto; }    /* horizontal scroll for long lines */
   .diff-table { font-size: 11px; }
   .diff-table td { padding: 0 4px; }
   .diff-table td.gutter {
     color: var(--accent);
     min-width: 22px;
+    white-space: nowrap;
+  }
+  /* Comment rows escape the table's intrinsic width by sticking to the
+     viewport's left edge when the diff is horizontally scrolled. */
+  .comment-form-row td,
+  .comment-thread-row td { padding: 0 !important; }
+  .comment-form-row td > *,
+  .comment-thread-row td > * {
+    position: sticky;
+    left: 8px;
+    width: calc(100vw - 32px);
+    max-width: 100%;
+    box-sizing: border-box;
   }
   .comment-thread, .comment-form { font-size: 13px; }
+  .comment-form textarea { box-sizing: border-box; max-width: 100%; }
 }
 
 @media (max-width: 480px) {
