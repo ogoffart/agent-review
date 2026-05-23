@@ -165,10 +165,12 @@ CONTEXT_LINES = 6
 
 
 def get_diff(mode: str, base: str | None = None, sha: str | None = None,
-             head: str | None = None) -> dict:
-    u = f"-U{CONTEXT_LINES}"
+             head: str | None = None, ignore_ws: bool = False) -> dict:
+    opts: list[str] = ["--no-color", f"-U{CONTEXT_LINES}"]
+    if ignore_ws:
+        opts.append("-w")  # --ignore-all-space
     if mode == "working":
-        diff_text = git("diff", "--no-color", u, "HEAD")
+        diff_text = git("diff", *opts, "HEAD")
         # Include untracked files so they show up in the sidebar too.
         # `git diff --no-index` exits 1 when files differ — expected here.
         untracked = git(
@@ -178,7 +180,7 @@ def get_diff(mode: str, base: str | None = None, sha: str | None = None,
             if not path:
                 continue
             diff_text += git(
-                "diff", "--no-color", u, "--no-index", "--",
+                "diff", *opts, "--no-index", "--",
                 "/dev/null", path, check=False,
             )
         return {
@@ -190,14 +192,11 @@ def get_diff(mode: str, base: str | None = None, sha: str | None = None,
     if mode == "branch":
         b = base or detect_default_base()
         cur = current_branch()
-        # If a head ref is supplied AND it isn't the checked-out branch, diff
-        # the two commit tips directly (no working-tree mixing). Otherwise
-        # fall back to `git diff base` which includes staged + unstaged.
         if head and head != cur:
-            diff_text = git("diff", "--no-color", u, b, head)
+            diff_text = git("diff", *opts, b, head)
             head_label = head
         else:
-            diff_text = git("diff", "--no-color", u, b)
+            diff_text = git("diff", *opts, b)
             head_label = cur
         return {
             "mode": "branch",
@@ -208,7 +207,7 @@ def get_diff(mode: str, base: str | None = None, sha: str | None = None,
     if mode == "commit":
         if not sha:
             raise ValueError("commit mode requires sha")
-        diff_text = git("show", "--no-color", u, "--pretty=format:", sha)
+        diff_text = git("show", *opts, "--pretty=format:", sha)
         return {
             "mode": "commit",
             "base": f"{sha}^",
@@ -220,7 +219,7 @@ def get_diff(mode: str, base: str | None = None, sha: str | None = None,
         t = head
         if not (f and t):
             raise ValueError("range mode requires both 'from' (base) and 'to' (head)")
-        diff_text = git("diff", "--no-color", u, f, t)
+        diff_text = git("diff", *opts, f, t)
         return {
             "mode": "range",
             "base": f,
@@ -452,7 +451,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 base = q.get("base", [None])[0]
                 sha = q.get("sha", [None])[0]
                 head = q.get("head", [None])[0]
-                self._json(200, get_diff(mode, base=base, sha=sha, head=head))
+                ignore_ws = q.get("ignore_ws", ["0"])[0] == "1"
+                self._json(200, get_diff(mode, base=base, sha=sha,
+                                          head=head, ignore_ws=ignore_ws))
                 return
             if url.path == "/api/branches":
                 self._json(200, {"branches": get_branches()})

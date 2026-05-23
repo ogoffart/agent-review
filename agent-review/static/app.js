@@ -96,6 +96,7 @@ async function loadDiff() {
     if (state.base) url += `&base=${encodeURIComponent(state.base)}`;
     if (state.head) url += `&head=${encodeURIComponent(state.head)}`;
   }
+  if (state.ignoreWs) url += '&ignore_ws=1';
   state.diff = await api(url);
   render();
   renderBranches();
@@ -193,6 +194,8 @@ function renderFile(file, idx) {
   const tbody = document.createElement('tbody');
   table.appendChild(tbody);
 
+  detectMovedLines(file);
+
   let prevNewEnd = 0;     // last new-line number rendered so far (0 = start of file)
   let prevOldEnd = 0;
   const canExpand = file.status === 'modified' || file.status === 'renamed';
@@ -234,7 +237,8 @@ function renderFile(file, idx) {
 function createLineRow(line, file, wordHTMLOverride) {
   const row = document.createElement('tr');
   const cls = line.type === 'add' ? 'add' : line.type === 'del' ? 'del' : 'ctx';
-  row.className = cls;
+  row.className = cls + (line.moved ? ' moved' : '');
+  if (line.moved) row.title = 'moved';
   const sideForGutter = line.type === 'del' ? 'old' : 'new';
   const lineForGutter = line.type === 'del' ? line.old : line.new;
   row.dataset.side = sideForGutter;
@@ -310,6 +314,37 @@ async function expandGap(file, gap, rowEl) {
     nextHunk.style.display = 'none';
   }
   renderInlineComments();   // re-anchor any comments hidden in the gap
+}
+
+function detectMovedLines(file) {
+  // A line counts as "moved" if its trimmed text (length > 3 to avoid
+  // pairing trivial lines like "}" or " ") appears as both a deletion
+  // and an addition somewhere in this file. Pair them FIFO so each
+  // del/add only matches once.
+  const dels = new Map();
+  for (const h of file.hunks) {
+    for (const l of h.lines) {
+      l.moved = false;  // reset across re-renders
+      if (l.type === 'del') {
+        const t = l.text;
+        if (t.trim().length <= 3) continue;
+        if (!dels.has(t)) dels.set(t, []);
+        dels.get(t).push(l);
+      }
+    }
+  }
+  for (const h of file.hunks) {
+    for (const l of h.lines) {
+      if (l.type === 'add') {
+        const matches = dels.get(l.text);
+        if (matches && matches.length) {
+          const del = matches.shift();
+          del.moved = true;
+          l.moved = true;
+        }
+      }
+    }
+  }
 }
 
 function computeWordDiffs(lines, language) {
@@ -600,6 +635,15 @@ window.addEventListener('DOMContentLoaded', async () => {
   applyZoom(loadZoom());
   $('#zoom-out').onclick = () => nudgeZoom(-1);
   $('#zoom-in').onclick = () => nudgeZoom(+1);
+  state.ignoreWs = localStorage.getItem('agent-review-ignore-ws') === '1';
+  const wsBtn = $('#ignore-ws');
+  wsBtn.classList.toggle('active', state.ignoreWs);
+  wsBtn.onclick = async () => {
+    state.ignoreWs = !state.ignoreWs;
+    localStorage.setItem('agent-review-ignore-ws', state.ignoreWs ? '1' : '0');
+    wsBtn.classList.toggle('active', state.ignoreWs);
+    await loadDiff();
+  };
   $$('.mode').forEach(b => b.onclick = () => setMode(b.dataset.mode));
   $('#refresh').onclick = async () => {
     await Promise.all([loadDiff(), loadComments(), loadCommits(), loadBranches()]);
