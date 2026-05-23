@@ -567,17 +567,22 @@ function computeWordDiffs(lines, language) {
       const a = lines[i + p].text;
       const b = lines[j + p].text;
       const parts = Diff.diffWordsWithSpace(a, b);
-      // Experiment: wrap the words that did NOT change. Loud lines stay
-      // calm; the changed parts pop simply by being un-wrapped.
+      // Wrap the words that did NOT change. Loud lines stay calm;
+      // the changed parts pop simply by being un-wrapped.
+      // Skip unchanged runs that are too small to matter — under 3
+      // chars or under 10% of either line — so the highlight stays
+      // signal-rich on lines that are mostly rewritten.
       const delRanges = [], addRanges = [];
+      const delMin = Math.max(3, Math.ceil(a.length * 0.1));
+      const addMin = Math.max(3, Math.ceil(b.length * 0.1));
       let posA = 0, posB = 0;
       for (const x of parts) {
         const len = x.value.length;
         if (x.removed) { posA += len; }
         else if (x.added) { posB += len; }
         else {
-          delRanges.push([posA, posA + len]);
-          addRanges.push([posB, posB + len]);
+          if (len >= delMin) delRanges.push([posA, posA + len]);
+          if (len >= addMin) addRanges.push([posB, posB + len]);
           posA += len; posB += len;
         }
       }
