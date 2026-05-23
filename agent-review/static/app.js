@@ -4,9 +4,11 @@
 const state = {
   mode: 'working',
   base: null,
+  head: null,         // branch tip to view (null = checked-out branch)
   diff: null,
   comments: [],
   info: null,
+  branches: [],
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -53,9 +55,49 @@ async function loadComments() {
 
 async function loadDiff() {
   let url = `/api/diff?mode=${state.mode}`;
-  if (state.mode === 'branch' && state.base) url += `&base=${encodeURIComponent(state.base)}`;
+  if (state.mode === 'branch') {
+    if (state.base) url += `&base=${encodeURIComponent(state.base)}`;
+    if (state.head) url += `&head=${encodeURIComponent(state.head)}`;
+  }
   state.diff = await api(url);
   render();
+  renderBranches();
+}
+
+async function loadBranches() {
+  const data = await api('/api/branches');
+  state.branches = data.branches || [];
+  renderBranches();
+}
+
+function renderBranches() {
+  const ul = $('#branch-list');
+  if (!ul) return;
+  ul.innerHTML = '';
+  $('#branch-count').textContent = state.branches.length ? `(${state.branches.length})` : '';
+  const activeHead = state.head || state.info?.branch;
+  for (const b of state.branches) {
+    const li = document.createElement('li');
+    li.className = 'branch-row';
+    if (b.name === activeHead && state.mode === 'branch') li.classList.add('active');
+    if (b.current) li.classList.add('current');
+    li.innerHTML = `
+      <span class="bullet">${b.current ? '●' : '○'}</span>
+      <span class="name">${escapeHTML(b.name)}</span>
+      <span class="muted sha">${escapeHTML(b.sha)}</span>
+    `;
+    li.title = `${b.subject}\n${b.date}`;
+    li.onclick = () => switchToBranch(b.name);
+    ul.appendChild(li);
+  }
+}
+
+async function switchToBranch(name) {
+  state.mode = 'branch';
+  state.head = name;
+  $$('.mode').forEach(b => b.classList.toggle('active', b.dataset.mode === 'branch'));
+  await loadDiff();
+  closeSidebarIfMobile();
 }
 
 function render() {
@@ -356,8 +398,29 @@ function cssEscape(s) {
 
 function setMode(mode) {
   state.mode = mode;
+  state.head = null;  // clicking the mode buttons resets to the current branch
   $$('.mode').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
   loadDiff();
+}
+
+const ZOOM_STEPS = [0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75];
+
+function loadZoom() {
+  const z = parseFloat(localStorage.getItem('agent-review-zoom'));
+  return Number.isFinite(z) && ZOOM_STEPS.includes(z) ? z : 1.0;
+}
+
+function applyZoom(z) {
+  document.documentElement.style.setProperty('--zoom', String(z));
+  localStorage.setItem('agent-review-zoom', String(z));
+}
+
+function nudgeZoom(delta) {
+  const cur = loadZoom();
+  let i = ZOOM_STEPS.indexOf(cur);
+  if (i < 0) i = ZOOM_STEPS.indexOf(1.0);
+  i = Math.max(0, Math.min(ZOOM_STEPS.length - 1, i + delta));
+  applyZoom(ZOOM_STEPS[i]);
 }
 
 function closeSidebarIfMobile() {
@@ -367,9 +430,12 @@ function closeSidebarIfMobile() {
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
+  applyZoom(loadZoom());
+  $('#zoom-out').onclick = () => nudgeZoom(-1);
+  $('#zoom-in').onclick = () => nudgeZoom(+1);
   $$('.mode').forEach(b => b.onclick = () => setMode(b.dataset.mode));
   $('#refresh').onclick = async () => {
-    await Promise.all([loadDiff(), loadComments(), loadCommits()]);
+    await Promise.all([loadDiff(), loadComments(), loadCommits(), loadBranches()]);
   };
   $('#sidebar-toggle').onclick = () => document.body.classList.toggle('sidebar-open');
   $('#sidebar-backdrop').onclick = () => document.body.classList.remove('sidebar-open');
@@ -379,5 +445,5 @@ window.addEventListener('DOMContentLoaded', async () => {
   });
 
   await loadInfo();
-  await Promise.all([loadDiff(), loadComments(), loadCommits()]);
+  await Promise.all([loadDiff(), loadComments(), loadCommits(), loadBranches()]);
 });

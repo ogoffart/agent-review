@@ -159,24 +159,32 @@ def parse_unified_diff(text: str) -> list[dict]:
     return files
 
 
-def get_diff(mode: str, base: str | None = None, sha: str | None = None) -> dict:
+def get_diff(mode: str, base: str | None = None, sha: str | None = None,
+             head: str | None = None) -> dict:
     if mode == "working":
         diff_text = git("diff", "--no-color", "HEAD")
-        head = current_branch()
         return {
             "mode": "working",
             "base": "HEAD",
-            "head": head,
+            "head": current_branch(),
             "files": parse_unified_diff(diff_text),
         }
     if mode == "branch":
         b = base or detect_default_base()
-        # working tree vs base = branch commits + staged + unstaged, all in one diff
-        diff_text = git("diff", "--no-color", b)
+        cur = current_branch()
+        # If a head ref is supplied AND it isn't the checked-out branch, diff
+        # the two commit tips directly (no working-tree mixing). Otherwise
+        # fall back to `git diff base` which includes staged + unstaged.
+        if head and head != cur:
+            diff_text = git("diff", "--no-color", b, head)
+            head_label = head
+        else:
+            diff_text = git("diff", "--no-color", b)
+            head_label = cur
         return {
             "mode": "branch",
             "base": b,
-            "head": current_branch(),
+            "head": head_label,
             "files": parse_unified_diff(diff_text),
         }
     if mode == "commit":
@@ -190,6 +198,30 @@ def get_diff(mode: str, base: str | None = None, sha: str | None = None) -> dict
             "files": parse_unified_diff(diff_text),
         }
     raise ValueError(f"unknown mode: {mode}")
+
+
+def get_branches() -> list[dict]:
+    sep = "\x1f"
+    fmt = sep.join(["%(refname:short)", "%(objectname:short)",
+                    "%(committerdate:iso8601)", "%(subject)"])
+    out = git("branch", f"--format={fmt}")
+    cur = current_branch()
+    branches = []
+    for line in out.strip().split("\n"):
+        if not line:
+            continue
+        parts = line.split(sep)
+        if len(parts) < 4:
+            parts += [""] * (4 - len(parts))
+        name = parts[0].lstrip("* ").strip()
+        branches.append({
+            "name": name,
+            "sha": parts[1],
+            "date": parts[2],
+            "subject": parts[3],
+            "current": name == cur,
+        })
+    return branches
 
 
 def get_commits(limit: int = 20) -> list[dict]:
@@ -357,7 +389,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 mode = q.get("mode", ["working"])[0]
                 base = q.get("base", [None])[0]
                 sha = q.get("sha", [None])[0]
-                self._json(200, get_diff(mode, base=base, sha=sha))
+                head = q.get("head", [None])[0]
+                self._json(200, get_diff(mode, base=base, sha=sha, head=head))
+                return
+            if url.path == "/api/branches":
+                self._json(200, {"branches": get_branches()})
                 return
             if url.path == "/api/comments":
                 self._json(200, load_comments())

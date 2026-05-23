@@ -21,6 +21,8 @@
       <button data-mode="branch" class="mode">vs <span id="base-name">base</span></button>
     </nav>
     <div class="spacer"></div>
+    <button id="zoom-out" title="Zoom out (smaller code)">A−</button>
+    <button id="zoom-in" title="Zoom in (bigger code)">A+</button>
     <button id="refresh" title="Reload diff and comments">↻</button>
   </header>
   <div id="sidebar-backdrop"></div>
@@ -34,6 +36,10 @@
       <section>
         <h2>Comments <span id="comment-count" class="muted"></span></h2>
         <ul id="comment-list"></ul>
+      </section>
+      <section>
+        <h2>Branches <span id="branch-count" class="muted"></span></h2>
+        <ul id="branch-list"></ul>
       </section>
       <section>
         <h2>Recent commits</h2>
