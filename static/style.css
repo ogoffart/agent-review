@@ -575,11 +575,14 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
      overflow:hidden setup pinned everything to the viewport and made
      zooming-out useless. */
   html, body { height: auto; }
-  body { display: block; padding-top: 49px; }
-  /* Pin the header to the viewport so the hamburger stays reachable
-     regardless of vertical OR horizontal scroll. position:sticky only
-     anchors against vertical scroll; fixed handles both. */
-  header { position: fixed; top: 0; left: 0; right: 0; min-height: 49px; box-sizing: border-box; }
+  body { display: block; }
+  /* Keep the header in normal flow so it stays viewport-wide (a fixed
+     header would span the wider-than-viewport layout when long lines
+     overflow horizontally, especially under pinch-zoom). Sticky pins
+     it to the top of the viewport during vertical scroll, which is
+     what we need here; it'll scroll off horizontally with the page,
+     but the hamburger is still reachable by scrolling back left. */
+  header { position: sticky; top: 0; }
   main {
     display: block;
     overflow: visible;
