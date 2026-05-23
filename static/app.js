@@ -434,6 +434,10 @@ function createLineRow(line, file, wordHTMLOverride) {
   row.dataset.side = sideForGutter;
   row.dataset.line = lineForGutter;
   row.dataset.path = sideForGutter === 'old' ? (file.old_path || '') : (file.new_path || '');
+  // Snapshot the line's text on the row so comments can be re-anchored
+  // by content when the line moves between diffs (edits above shift
+  // line numbers).
+  row.dataset.text = line.text;
 
   let contentHTML, tailUnchanged = false;
   if (wordHTMLOverride != null && typeof wordHTMLOverride === 'object') {
@@ -773,6 +777,7 @@ function openCommentForm(row) {
       mode: state.mode,
       base: state.diff?.base,
       head: state.diff?.head,
+      anchor_text: row.dataset.text ?? null,
     };
     try {
       await api('/api/comments', {
@@ -793,7 +798,7 @@ function openCommentForm(row) {
 }
 
 function renderInlineComments() {
-  $$('.comment-thread-row, .file-thread-block').forEach(r => r.remove());
+  $$('.comment-thread-row, .file-thread-block, #orphan-comments').forEach(r => r.remove());
   // Group comments by their anchor. Use JSON.stringify so file paths
   // that contain delimiters can't collide with each other.
   const grouped = new Map();
@@ -802,11 +807,13 @@ function renderInlineComments() {
     if (!grouped.has(key)) grouped.set(key, []);
     grouped.get(key).push(c);
   }
+  const orphaned = [];   // comments whose anchor can't be found in the current view
   for (const [key, list] of grouped) {
     const [file, side, , head] = JSON.parse(key);
     if (side === 'file') {
       // Attach a block-level thread under each matching file-header.
       const headers = $$(`.file-header[data-path="${cssEscape(file)}"]`);
+      if (headers.length === 0) { orphaned.push(...list); continue; }
       for (const header of headers) {
         const block = document.createElement('div');
         block.className = 'file-thread-block';
@@ -816,36 +823,81 @@ function renderInlineComments() {
       continue;
     }
     const line = JSON.parse(key)[2];
-    // Commit-message comments must match the originating commit's sha so
-    // a msg comment on commit A doesn't leak onto commit B's message.
     const headFilter = side === 'msg' && head
       ? `[data-head="${cssEscape(head)}"]`
       : '';
     const sel = `tr[data-path="${cssEscape(file)}"][data-side="${side}"][data-line="${line}"]${headFilter}`;
-    const rows = $$(sel);
+    let rows = $$(sel);
+    let moved = false;
+    if (rows.length === 0) {
+      // Strict anchor failed. Try re-anchoring by text: every comment
+      // in the group has the same intended target, so any one's
+      // anchor_text will do as a search key.
+      const anchorText = list.find(c => c.anchor_text != null)?.anchor_text;
+      if (anchorText != null && anchorText !== '') {
+        const cands = $$(`tr[data-path="${cssEscape(file)}"][data-side="${side}"][data-text="${cssEscape(anchorText)}"]${headFilter}`);
+        if (cands.length === 1) {
+          rows = cands;
+          moved = true;
+        }
+      }
+    }
+    if (rows.length === 0) { orphaned.push(...list); continue; }
     for (const row of rows) {
       const tr = document.createElement('tr');
       tr.className = 'comment-row-tr comment-thread-row';
       const td = document.createElement('td');
       td.colSpan = 2;
-      for (const c of list) td.appendChild(renderCommentThread(c));
+      for (const c of list) td.appendChild(renderCommentThread(c, { moved, originalLine: line }));
       tr.appendChild(td);
       row.after(tr);
     }
   }
+  if (orphaned.length) {
+    const root = $('#diff-root');
+    const block = document.createElement('div');
+    block.className = 'file';
+    block.id = 'orphan-comments';
+    const header = document.createElement('div');
+    header.className = 'file-header';
+    header.innerHTML = `<span class="status orphan">orphaned</span>
+      <span class="path">${orphaned.length} comment${orphaned.length === 1 ? '' : 's'} not in current view</span>`;
+    block.appendChild(header);
+    for (const c of orphaned) {
+      const thread = renderCommentThread(c, { orphan: true });
+      // Pad so anchor info is visible
+      const wrap = document.createElement('div');
+      wrap.className = 'file-thread-block';
+      wrap.appendChild(thread);
+      block.appendChild(wrap);
+    }
+    root.appendChild(block);
+  }
 }
 
-function renderCommentThread(c) {
+function renderCommentThread(c, opts) {
+  opts = opts || {};
   const el = document.createElement('div');
-  el.className = 'comment-thread' + (c.resolved ? ' resolved' : '');
+  el.className = 'comment-thread'
+    + (c.resolved ? ' resolved' : '')
+    + (opts.orphan ? ' orphan' : '')
+    + (opts.moved ? ' moved-anchor' : '');
   const when = new Date(c.created).toLocaleString();
   const replies = c.replies || [];
+  const movedBadge = opts.moved
+    ? `<span class="badge moved" title="Original line ${opts.originalLine}; re-anchored by matching text">↔ moved</span>`
+    : '';
+  const orphanBadge = opts.orphan
+    ? '<span class="badge orphan" title="The anchor isn\'t in the current diff view">orphan</span>'
+    : '';
   el.innerHTML = `
     <div class="meta">
       <strong>${escapeHTML(prettyCommentAnchor(c))}</strong>
       <span>·</span>
       <span>${escapeHTML(when)}</span>
       ${c.seen ? '<span class="badge seen" title="Seen by agent">✓ seen</span>' : ''}
+      ${movedBadge}
+      ${orphanBadge}
       ${c.resolved ? '<span>· resolved</span>' : ''}
     </div>
     <div class="body"></div>
@@ -964,17 +1016,28 @@ function renderCommentSidebar() {
     li.className = 'comment-row' + (c.resolved ? ' resolved' : '');
     li.innerHTML = `<div class="where">${escapeHTML(prettyCommentAnchor(c))}</div><div>${escapeHTML(c.text.slice(0, 120))}</div>`;
     li.onclick = () => {
-      let sel;
+      let target = null;
       if (c.side === 'file') {
-        sel = `.file-header[data-path="${cssEscape(c.file)}"]`;
+        target = document.querySelector(`.file-header[data-path="${cssEscape(c.file)}"]`);
       } else {
         const headFilter = c.side === 'msg' && c.head
           ? `[data-head="${cssEscape(c.head)}"]`
           : '';
-        sel = `tr[data-path="${cssEscape(c.file)}"][data-side="${c.side}"][data-line="${c.line}"]${headFilter}`;
+        target = document.querySelector(
+          `tr[data-path="${cssEscape(c.file)}"][data-side="${c.side}"][data-line="${c.line}"]${headFilter}`
+        );
+        if (!target && c.anchor_text) {
+          // Strict anchor missing — fall back to text match (the same
+          // re-anchor renderInlineComments uses for moved lines).
+          target = document.querySelector(
+            `tr[data-path="${cssEscape(c.file)}"][data-side="${c.side}"][data-text="${cssEscape(c.anchor_text)}"]${headFilter}`
+          );
+        }
       }
-      const row = document.querySelector(sel);
-      if (row) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Last resort: the comment couldn't be placed in the diff. Jump
+      // to the orphan section at the bottom, if any.
+      if (!target) target = document.getElementById('orphan-comments');
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
     };
     ul.appendChild(li);
   }

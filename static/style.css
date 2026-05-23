@@ -443,6 +443,9 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
   margin-left: 4px;
 }
 .comment-thread .badge.seen { background: var(--add-line); color: var(--text); }
+.comment-thread .badge.moved { background: var(--hunk-bg); color: var(--hunk-fg); }
+.comment-thread .badge.orphan { background: var(--del-line); color: var(--text); }
+.file-header .status.orphan { background: var(--del-line); color: #67191f; }
 .comment-thread .replies { margin: 6px 0; }
 .comment-thread .reply {
   margin: 4px 0 4px 16px;

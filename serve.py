@@ -396,6 +396,7 @@ def add_comment(payload: dict) -> dict:
     _check_ref(payload.get("mode"), "mode")
     _check_ref(payload.get("base"), "base")
     _check_ref(payload.get("head"), "head")
+    _check_ref(payload.get("anchor_text"), "anchor_text")
     line = payload.get("line")
     # 'file'-level comments aren't anchored to a line; everything else is.
     if payload["side"] == "file":
@@ -413,6 +414,11 @@ def add_comment(payload: dict) -> dict:
         "mode": payload.get("mode"),
         "base": payload.get("base"),
         "head": payload.get("head"),
+        # Snapshot of the line's text at comment time. Lets the client
+        # re-anchor the comment when the line moves later (edits above
+        # shift the line number) and the original (file, side, line)
+        # tuple no longer points at the same content.
+        "anchor_text": payload.get("anchor_text"),
         "resolved": False,
         "seen": False,
         "replies": [],
