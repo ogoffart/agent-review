@@ -432,26 +432,53 @@ function renderCommentThread(c) {
   const el = document.createElement('div');
   el.className = 'comment-thread' + (c.resolved ? ' resolved' : '');
   const when = new Date(c.created).toLocaleString();
+  const replies = c.replies || [];
   el.innerHTML = `
     <div class="meta">
       <strong>${escapeHTML(c.file)}:${c.line}</strong>
       <span>·</span>
       <span>${escapeHTML(when)}</span>
+      ${c.seen ? '<span class="badge seen" title="Seen by agent">✓ seen</span>' : ''}
       ${c.resolved ? '<span>· resolved</span>' : ''}
     </div>
     <div class="body"></div>
+    <div class="replies"></div>
     <div class="actions">
+      <button data-act="reply">Reply</button>
       <button data-act="toggle">${c.resolved ? 'Reopen' : 'Resolve'}</button>
+      <button data-act="seen">${c.seen ? 'Unsee' : 'Mark seen'}</button>
       <button data-act="edit">Edit</button>
       <button data-act="delete">Delete</button>
     </div>
   `;
   el.querySelector('.body').textContent = c.text;
+
+  const repliesEl = el.querySelector('.replies');
+  for (const r of replies) {
+    const div = document.createElement('div');
+    div.className = 'reply' + (r.by === 'agent' ? ' agent' : ' user');
+    const rwhen = r.created ? new Date(r.created).toLocaleString() : '';
+    div.innerHTML = `
+      <div class="reply-meta">${escapeHTML(r.by || 'unknown')} · ${escapeHTML(rwhen)}</div>
+      <div class="reply-body"></div>
+    `;
+    div.querySelector('.reply-body').textContent = r.text;
+    repliesEl.appendChild(div);
+  }
+
   el.querySelector('[data-act="toggle"]').onclick = async () => {
     await api(`/api/comments/${c.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ resolved: !c.resolved }),
+    });
+    await loadComments();
+  };
+  el.querySelector('[data-act="seen"]').onclick = async () => {
+    await api(`/api/comments/${c.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ seen: !c.seen }),
     });
     await loadComments();
   };
@@ -480,6 +507,32 @@ function renderCommentThread(c) {
       await loadComments();
     };
     el.querySelector('.actions').prepend(save);
+  };
+  el.querySelector('[data-act="reply"]').onclick = () => {
+    if (el.querySelector('.reply-form')) return;
+    const form = document.createElement('div');
+    form.className = 'reply-form';
+    form.innerHTML = `
+      <textarea placeholder="Reply…" rows="2"></textarea>
+      <div class="actions">
+        <button class="cancel">Cancel</button>
+        <button class="primary submit">Send</button>
+      </div>
+    `;
+    repliesEl.after(form);
+    const ta = form.querySelector('textarea');
+    ta.focus();
+    form.querySelector('.cancel').onclick = () => form.remove();
+    form.querySelector('.submit').onclick = async () => {
+      const text = ta.value.trim();
+      if (!text) return;
+      await api(`/api/comments/${c.id}/replies`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, by: 'user' }),
+      });
+      await loadComments();
+    };
   };
   return el;
 }

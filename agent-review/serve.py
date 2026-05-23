@@ -313,6 +313,8 @@ def add_comment(payload: dict) -> dict:
         "base": payload.get("base"),
         "head": payload.get("head"),
         "resolved": False,
+        "seen": False,
+        "replies": [],
         "created": datetime.now(timezone.utc).isoformat(),
     }
     data.setdefault("comments", []).append(entry)
@@ -324,13 +326,43 @@ def update_comment(cid: str, payload: dict) -> dict | None:
     data = load_comments()
     for c in data.get("comments", []):
         if c["id"] == cid:
-            for k in ("text", "resolved"):
+            for k in ("text", "resolved", "seen"):
                 if k in payload:
                     c[k] = payload[k]
             c["updated"] = datetime.now(timezone.utc).isoformat()
             save_comments(data)
             return c
     return None
+
+
+def add_reply(cid: str, payload: dict) -> dict | None:
+    text = (payload.get("text") or "").strip()
+    if not text:
+        raise ValueError("reply text is required")
+    data = load_comments()
+    for c in data.get("comments", []):
+        if c["id"] == cid:
+            reply = {
+                "by": payload.get("by") or "agent",
+                "text": text,
+                "created": datetime.now(timezone.utc).isoformat(),
+            }
+            c.setdefault("replies", []).append(reply)
+            c["updated"] = reply["created"]
+            # adding a reply implies the responder has now seen it
+            if payload.get("by") in (None, "agent"):
+                c["seen"] = True
+            save_comments(data)
+            return reply
+    return None
+
+
+def unseen_comments() -> list[dict]:
+    """Comments not yet marked seen and not resolved."""
+    return [
+        c for c in load_comments().get("comments", [])
+        if not c.get("seen") and not c.get("resolved")
+    ]
 
 
 def delete_comment(cid: str) -> bool:
@@ -435,7 +467,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._json(200, {"lines": out.splitlines()})
                 return
             if url.path == "/api/comments":
-                self._json(200, load_comments())
+                if q.get("unseen", [""])[0] == "1":
+                    self._json(200, {"comments": unseen_comments()})
+                else:
+                    self._json(200, load_comments())
                 return
             self._json(404, {"error": "not found"})
         except Exception as e:
@@ -448,6 +483,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 body = self._read_json()
                 entry = add_comment(body)
                 self._json(200, entry)
+                return
+            # POST /api/comments/<id>/replies
+            if url.path.startswith("/api/comments/") and url.path.endswith("/replies"):
+                cid = url.path[len("/api/comments/"):-len("/replies")]
+                body = self._read_json()
+                reply = add_reply(cid, body)
+                if reply is None:
+                    self._json(404, {"error": "comment not found"})
+                    return
+                self._json(200, reply)
                 return
             self._json(404, {"error": "not found"})
         except ValueError as e:

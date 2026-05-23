@@ -312,6 +312,63 @@ main {
   cursor: pointer;
   font-size: 11px;
 }
+.comment-thread .badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: rgba(0,0,0,.08);
+  margin-left: 4px;
+}
+.comment-thread .badge.seen { background: var(--add-line); color: var(--text); }
+.comment-thread .replies { margin: 6px 0; }
+.comment-thread .reply {
+  margin: 4px 0 4px 16px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--border);
+  background: rgba(255,255,255,.5);
+  border-radius: 0 4px 4px 0;
+}
+.comment-thread .reply.agent { border-left-color: var(--accent); }
+.comment-thread .reply .reply-meta {
+  font-size: 11px; color: var(--muted); margin-bottom: 2px;
+}
+.comment-thread .reply .reply-body { white-space: pre-wrap; }
+.comment-thread .reply-form {
+  margin: 6px 0 6px 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px;
+}
+.comment-thread .reply-form textarea {
+  width: 100%;
+  font: 13px/1.4 system-ui, sans-serif;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+  resize: vertical;
+  box-sizing: border-box;
+  color: var(--text);
+  background: var(--bg);
+}
+.comment-thread .reply-form .actions {
+  display: flex; gap: 6px; justify-content: flex-end; margin-top: 4px;
+}
+.comment-thread .reply-form button {
+  padding: 2px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+}
+.comment-thread .reply-form button.primary {
+  background: var(--accent); color: white; border-color: var(--accent);
+}
+@media (prefers-color-scheme: dark) {
+  .comment-thread .reply { background: rgba(0,0,0,.2); }
+}
 
 .comment-form {
   background: var(--panel);
