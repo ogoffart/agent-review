@@ -425,19 +425,15 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
 /* .word marks the *unchanged* portion of a word-diff line; it gets a
  * lighter background than the line tint so the real change reads as
  * the foreground. */
-.diff-table tr.add td.content .word,
-.diff-table tr.del td.content .word {
-  /* Extend the background through the line's leading (line-height 1.5
-     means 0.25em of leading above and below the glyph box). */
-  padding: 0.25em 0;
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
-}
+/* .word is text-height only (no padding hack): the surrounding row
+   tint (td.content background) shows through above and below as the
+   line's leading, so there are no light-coloured strips bleeding into
+   neighbouring rows. */
 .diff-table tr.add td.content .word { background: var(--add-bg); }
 .diff-table tr.del td.content .word { background: var(--del-bg); }
 
 .diff-table tr.comment-row-tr td {
-  background: transparent; padding: 6px;
+  background: transparent; padding: 0;
 }
 .comment-thread {
   background: var(--comment-bg);
@@ -575,14 +571,20 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
      overflow:hidden setup pinned everything to the viewport and made
      zooming-out useless. */
   html, body { height: auto; }
-  body { display: block; }
-  /* Keep the header in normal flow so it stays viewport-wide (a fixed
-     header would span the wider-than-viewport layout when long lines
-     overflow horizontally, especially under pinch-zoom). Sticky pins
-     it to the top of the viewport during vertical scroll, which is
-     what we need here; it'll scroll off horizontally with the page,
-     but the hamburger is still reachable by scrolling back left. */
-  header { position: sticky; top: 0; }
+  body { display: block; padding-top: 49px; }
+  /* Sticky doesn't help here: the body grows wider than the viewport
+     when long diff lines push it out, so a sticky header inherits the
+     body width (and .spacer's flex:1 stretches the right-side buttons
+     off-screen). Fixed positioning with an explicit viewport-unit
+     width keeps the header clamped to the visible area regardless of
+     vertical or horizontal scroll, so the hamburger stays reachable. */
+  header {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw; max-width: 100vw;
+    box-sizing: border-box;
+    min-height: 49px;
+  }
   main {
     display: block;
     overflow: visible;
