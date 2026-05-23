@@ -295,6 +295,9 @@ async function expandGap(file, gap, rowEl) {
     rowEl.querySelector('.expand-btn').textContent = `error: ${e.message}`;
     return;
   }
+  // Remember the next hunk header; we'll hide it once the gap is filled in,
+  // since the lines now flow contiguously and the @@ divider is redundant.
+  const nextHunk = rowEl.nextElementSibling;
   const fragment = document.createDocumentFragment();
   for (let n = gap.newStart, o = gap.oldStart; n <= gap.newEnd; n++, o++) {
     const text = blob[n - 1] ?? '';
@@ -303,6 +306,9 @@ async function expandGap(file, gap, rowEl) {
     }, file));
   }
   rowEl.replaceWith(fragment);
+  if (nextHunk && nextHunk.classList.contains('hunk')) {
+    nextHunk.style.display = 'none';
+  }
   renderInlineComments();   // re-anchor any comments hidden in the gap
 }
 
