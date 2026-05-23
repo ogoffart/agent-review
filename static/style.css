@@ -575,7 +575,11 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
      overflow:hidden setup pinned everything to the viewport and made
      zooming-out useless. */
   html, body { height: auto; }
-  body { display: block; }
+  body { display: block; padding-top: 49px; }
+  /* Pin the header to the viewport so the hamburger stays reachable
+     regardless of vertical OR horizontal scroll. position:sticky only
+     anchors against vertical scroll; fixed handles both. */
+  header { position: fixed; top: 0; left: 0; right: 0; min-height: 49px; box-sizing: border-box; }
   main {
     display: block;
     overflow: visible;
