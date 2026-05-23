@@ -10,12 +10,12 @@
   --accent: #0969da;
   --add-bg: #dafbe1;
   --add-line: #b4f0c1;
-  --add-word: #6fdd8b;
+  --add-word: #95e8ad;
   --add-bg-moved: #d6efdc;
   --add-line-moved: #a7d9b6;
   --del-bg: #ffebe9;
   --del-line: #ffc9c4;
-  --del-word: #ff8e85;
+  --del-word: #ffaca5;
   --del-bg-moved: #f6dedc;
   --del-line-moved: #e6bab5;
   --hunk-bg: #ddf4ff;
@@ -36,12 +36,12 @@
     --accent: #4493f8;
     --add-bg: #033a16;
     --add-line: #0a4220;
-    --add-word: #1e6131;
+    --add-word: #185224;
     --add-bg-moved: #0a2913;
     --add-line-moved: #133720;
     --del-bg: #4b1117;
     --del-line: #67191f;
-    --del-word: #aa1f2b;
+    --del-word: #8c1d27;
     --del-bg-moved: #2e0a0e;
     --del-line-moved: #4a1014;
     --hunk-bg: #0c2d6b;
@@ -389,14 +389,9 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
 .diff-table tr.del td.content .word {
   border-radius: 2px;
   padding: 0 1px;
-  font-weight: 600;
 }
 .diff-table tr.add td.content .word { background: var(--add-word); }
-.diff-table tr.del td.content .word {
-  background: var(--del-word);
-  text-decoration: line-through;
-  text-decoration-color: rgba(0, 0, 0, 0.35);
-}
+.diff-table tr.del td.content .word { background: var(--del-word); }
 
 .diff-table tr.comment-row-tr td {
   background: transparent; padding: 6px;
