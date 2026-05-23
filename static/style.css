@@ -535,7 +535,18 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
 
 @media (max-width: 820px) {
   :root { --code-base: 11px; }   /* baseline shrinks; --zoom still applies */
-  main { grid-template-columns: 1fr; }
+  /* Let the page grow taller and wider than the viewport so the browser's
+     own pinch-zoom can reveal long lines; the previous height:100% /
+     overflow:hidden setup pinned everything to the viewport and made
+     zooming-out useless. */
+  html, body { height: auto; }
+  body { display: block; }
+  main {
+    display: block;
+    overflow: visible;
+    grid-template-columns: none;
+  }
+  #diff-pane { overflow: visible; padding: 8px; }
   #sidebar-resizer { display: none; }
   #sidebar-toggle { display: inline-block; }
   .info { display: none; }
@@ -549,31 +560,19 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
     box-shadow: 2px 0 8px rgba(0,0,0,.15);
   }
   body.sidebar-open #sidebar { transform: translateX(0); }
-  #diff-pane { padding: 8px; }
   .file {
     margin-bottom: 10px;
     border-radius: 6px;
-    overflow: hidden;       /* keep file block within viewport */
+    /* Allow long diff lines to push the document width so pinch-zoom-out
+       can scale the whole page down to fit. */
+    overflow: visible;
   }
   .file-header { padding: 6px 8px; font-size: 12px; }
-  .file { overflow-x: auto; }    /* horizontal scroll for long lines */
   .diff-table td { padding: 0 4px; }
   .diff-table td.gutter {
     color: var(--accent);
     min-width: 22px;
     white-space: nowrap;
-  }
-  /* Comment rows escape the table's intrinsic width by sticking to the
-     viewport's left edge when the diff is horizontally scrolled. */
-  .comment-form-row td,
-  .comment-thread-row td { padding: 0 !important; }
-  .comment-form-row td > *,
-  .comment-thread-row td > * {
-    position: sticky;
-    left: 8px;
-    width: calc(100vw - 32px);
-    max-width: 100%;
-    box-sizing: border-box;
   }
   .comment-thread, .comment-form { font-size: 13px; }
   .comment-form textarea { box-sizing: border-box; max-width: 100%; }
