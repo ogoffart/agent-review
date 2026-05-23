@@ -415,7 +415,9 @@ function renderFile(file, idx) {
     prevNewEnd = hunk.new_start + hunk.new_lines - 1;
     prevOldEnd = hunk.old_start + hunk.old_lines - 1;
   }
-  if (canExpand && file.hunks.length > 0) {
+  const hasMoreLines = file.new_total_lines == null
+    || prevNewEnd < file.new_total_lines;
+  if (canExpand && file.hunks.length > 0 && hasMoreLines) {
     tbody.appendChild(makeTrailingExpandRow(file, prevNewEnd, prevOldEnd));
   }
   wrap.appendChild(table);

@@ -182,6 +182,31 @@ def _reject_flaglike(value: str, name: str) -> None:
         raise ValueError(f"{name} must not start with '-'")
 
 
+def _count_new_lines(files: list[dict], new_ref: str | None) -> None:
+    """Annotate each modified/renamed file with `new_total_lines` so the
+    client can suppress the trailing 'Show remaining lines' button when
+    the diff already covers the file to EOF.
+
+    `new_ref` is the ref the new side came from, or None for the
+    working tree (in which case we read directly from disk)."""
+    for f in files:
+        if f.get("binary"):
+            continue
+        if f["status"] not in ("modified", "renamed"):
+            continue
+        path = f.get("new_path")
+        if not path:
+            continue
+        try:
+            if new_ref is None:
+                text = (REPO / path).read_text()
+            else:
+                text = git("show", "--end-of-options", f"{new_ref}:{path}", check=False)
+            f["new_total_lines"] = len(text.splitlines())
+        except Exception:
+            pass
+
+
 def get_diff(mode: str, base: str | None = None, sha: str | None = None,
              head: str | None = None, ignore_ws: bool = False) -> dict:
     opts: list[str] = ["--no-color", f"-U{CONTEXT_LINES}"]
@@ -203,11 +228,13 @@ def get_diff(mode: str, base: str | None = None, sha: str | None = None,
                 "diff", *opts, "--no-index", "--",
                 "/dev/null", path, check=False,
             )
+        files = parse_unified_diff(diff_text)
+        _count_new_lines(files, None)
         return {
             "mode": "working",
             "base": base_ref,
             "head": current_branch(),
-            "files": parse_unified_diff(diff_text),
+            "files": files,
         }
     if mode == "branch":
         b = base or detect_default_base()
@@ -220,11 +247,13 @@ def get_diff(mode: str, base: str | None = None, sha: str | None = None,
         else:
             diff_text = git("diff", *opts, "--end-of-options", b)
             head_label = cur
+        files = parse_unified_diff(diff_text)
+        _count_new_lines(files, head_label)
         return {
             "mode": "branch",
             "base": b,
             "head": head_label,
-            "files": parse_unified_diff(diff_text),
+            "files": files,
         }
     if mode == "commit":
         if not sha:
@@ -244,12 +273,14 @@ def get_diff(mode: str, base: str | None = None, sha: str | None = None,
             "email":   parts[5] if len(parts) > 5 else "",
             "date":    parts[6] if len(parts) > 6 else "",
         }
+        files = parse_unified_diff(diff_text)
+        _count_new_lines(files, sha)
         return {
             "mode": "commit",
             "base": f"{sha}^",
             "head": sha,
             "commit": commit_meta,
-            "files": parse_unified_diff(diff_text),
+            "files": files,
         }
     if mode == "range":
         f = base
@@ -259,11 +290,13 @@ def get_diff(mode: str, base: str | None = None, sha: str | None = None,
         _reject_flaglike(f, "base")
         _reject_flaglike(t, "head")
         diff_text = git("diff", *opts, "--end-of-options", f, t)
+        files = parse_unified_diff(diff_text)
+        _count_new_lines(files, t)
         return {
             "mode": "range",
             "base": f,
             "head": t,
-            "files": parse_unified_diff(diff_text),
+            "files": files,
         }
     raise ValueError(f"unknown mode: {mode}")
 
