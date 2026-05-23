@@ -30,6 +30,7 @@ async function loadInfo() {
   state.base = state.info.default_base;
   $('#repo-info').textContent = `${state.info.repo} · ${state.info.branch}`;
   $('#base-name').textContent = state.base;
+  document.title = `${state.info.branch} · agent-review`;
 }
 
 async function loadCommits() {
