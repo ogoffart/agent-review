@@ -28,9 +28,35 @@ async function api(path, opts) {
 async function loadInfo() {
   state.info = await api('/api/info');
   state.base = state.info.default_base;
-  $('#repo-info').textContent = `${state.info.repo} · ${state.info.branch}`;
   $('#base-name').textContent = state.base;
-  document.title = `${state.info.branch} · agent-review`;
+  updateHeader();
+}
+
+function diffSpec() {
+  const d = state.diff;
+  if (!d) return '';
+  switch (d.mode) {
+    case 'working': return 'git diff HEAD';
+    case 'branch':  return `git diff ${d.base} ${d.head}`;
+    case 'commit':  return `git show ${d.head}`;
+    case 'range':   return `git diff ${d.base}..${d.head}`;
+    default:        return '';
+  }
+}
+
+function repoBasename() {
+  const p = state.info?.repo || '';
+  return p.replace(/\/+$/, '').split('/').pop() || p;
+}
+
+function updateHeader() {
+  const repo = repoBasename();
+  const spec = diffSpec();
+  const text = spec ? `${repo} · ${spec}` : repo;
+  const info = $('#repo-info');
+  info.textContent = text;
+  info.title = `${state.info?.repo || ''}\n${spec}`;
+  document.title = spec ? `${spec} · agent-review` : 'agent-review';
 }
 
 async function loadCommits() {
@@ -143,6 +169,7 @@ async function switchToBranch(name) {
 }
 
 function render() {
+  updateHeader();
   const root = $('#diff-root');
   root.innerHTML = '';
   const files = state.diff?.files || [];
