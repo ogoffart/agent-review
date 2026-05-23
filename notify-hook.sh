@@ -18,10 +18,19 @@ unseen = [c for c in data.get("comments", [])
 if not unseen:
     sys.exit(0)
 
+def anchor(c):
+    side = c.get("side", "new")
+    if side == "file":
+        return f"{c['file']} (file-level)"
+    if side == "msg":
+        sha = (c.get("head") or "")[:7]
+        return f"commit {sha} message line {c['line']}" if sha else f"commit message line {c['line']}"
+    return f"{c['file']}:{c['line']} ({side})"
+
 print()
 print(f'<agent-review-feedback count="{len(unseen)}" file="{sys.argv[1]}">')
 for c in unseen:
-    print(f"  [{c['id']}] {c['file']}:{c['line']} ({c.get('side','new')})")
+    print(f"  [{c['id']}] {anchor(c)}")
     for line in (c.get("text") or "").splitlines():
         print(f"    | {line}")
     for r in c.get("replies") or []:

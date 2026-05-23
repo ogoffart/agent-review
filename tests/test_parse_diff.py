@@ -121,6 +121,36 @@ class TestParseUnifiedDiff(unittest.TestCase):
         self.assertTrue(files[0]["binary"])
         self.assertEqual(files[0]["hunks"], [])
 
+    def test_line_starting_with_plus_plus_kept(self):
+        # An added line whose text starts with '++ ' renders as '+++ ' in
+        # unified diff; it must NOT be mistaken for the file header.
+        diff = (
+            "diff --git a/foo.py b/foo.py\n"
+            "index 1234567..89abcde 100644\n"
+            "--- a/foo.py\n"
+            "+++ b/foo.py\n"
+            "@@ -1,2 +1,3 @@\n"
+            " x\n"
+            "+++ added\n"
+            " y\n"
+        )
+        lines = serve.parse_unified_diff(diff)[0]["hunks"][0]["lines"]
+        self.assertEqual(lines[1], {"type": "add", "old": None, "new": 2, "text": "++ added"})
+
+    def test_line_starting_with_minus_minus_kept(self):
+        diff = (
+            "diff --git a/foo.py b/foo.py\n"
+            "index 1234567..89abcde 100644\n"
+            "--- a/foo.py\n"
+            "+++ b/foo.py\n"
+            "@@ -1,3 +1,2 @@\n"
+            " x\n"
+            "-- removed\n"
+            " y\n"
+        )
+        lines = serve.parse_unified_diff(diff)[0]["hunks"][0]["lines"]
+        self.assertEqual(lines[1], {"type": "del", "old": 2, "new": None, "text": "- removed"})
+
 
 class TestLanguageDetection(unittest.TestCase):
     def test_known_extensions(self):

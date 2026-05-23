@@ -18,10 +18,11 @@ const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 // The page may be mounted under a /<token>/ prefix; derive the API base
 // from window.location so calls work without any hard-coded prefix.
 const BASE = window.location.pathname.replace(/\/index\.html$/, '').replace(/\/$/, '');
-// The URL token is the segment between the page root and the static
-// path. Echo it back in a custom header on state-changing requests so
-// a malicious page can't CSRF-submit comments even if it learns the URL.
-const URL_TOKEN = (BASE.match(/\/([0-9a-f]{6,})$/i) || [, ''])[1];
+// The URL token (if any) is the last path segment of BASE. Echo it
+// back in a custom header on state-changing requests so a malicious
+// page can't CSRF-submit comments even if it learns the URL. When
+// the server runs without --token, BASE is empty and URL_TOKEN is ''.
+const URL_TOKEN = BASE.split('/').pop() || '';
 async function api(path, opts) {
   opts = opts || {};
   const method = (opts.method || 'GET').toUpperCase();
@@ -77,27 +78,24 @@ function readHash() {
 
 async function applyHashState() {
   const h = readHash();
-  state.ignoreWs = h.ws || (localStorage.getItem('agent-review-ignore-ws') === '1' && !window.location.hash);
+  // URL wins over localStorage for ws; only fall back to the stored
+  // preference when there's no hash at all.
+  state.ignoreWs = window.location.hash
+    ? !!h.ws
+    : localStorage.getItem('agent-review-ignore-ws') === '1';
   $('#ignore-ws')?.classList.toggle('active', state.ignoreWs);
+  if (!['working', 'branch', 'commit', 'range'].includes(h.mode)) {
+    h.mode = 'working';  // unknown / tampered → fall back, don't poison state
+  }
   state.mode = h.mode;
   state.commitSha = h.sha || null;
+  state.base = h.base || null;
+  state.head = h.head || null;
   state.rangeFrom = null;
   $$('.mode').forEach(b => b.classList.toggle('active',
     (b.dataset.mode === 'working' && h.mode === 'working')
     || (b.dataset.mode === 'branch' && h.mode === 'branch')));
-  let url;
-  if (h.mode === 'commit' && h.sha) {
-    url = `/api/diff?mode=commit&sha=${encodeURIComponent(h.sha)}`;
-  } else if (h.mode === 'range' && h.base && h.head) {
-    url = `/api/diff?mode=range&base=${encodeURIComponent(h.base)}&head=${encodeURIComponent(h.head)}`;
-  } else if (h.mode === 'branch') {
-    url = `/api/diff?mode=branch${h.base ? `&base=${encodeURIComponent(h.base)}` : ''}${h.head ? `&head=${encodeURIComponent(h.head)}` : ''}`;
-  } else {
-    url = `/api/diff?mode=working${h.base ? `&base=${encodeURIComponent(h.base)}` : ''}`;
-  }
-  if (state.ignoreWs) url += '&ignore_ws=1';
-  state.diff = await api(url);
-  render();
+  await loadDiff();
 }
 
 async function loadInfo() {
@@ -171,9 +169,10 @@ function renderCommits() {
       state.rangeFrom = null;
       state.mode = 'working';
       state.commitSha = null;
+      state.base = from;
+      state.head = null;
       $$('.mode').forEach(b => b.classList.remove('active'));
-      state.diff = await api(`/api/diff?mode=working&base=${encodeURIComponent(from)}${state.ignoreWs ? '&ignore_ws=1' : ''}`);
-      render();
+      await loadDiff();
       writeHash();
       renderCommits();
       closeSidebarIfMobile();
@@ -217,17 +216,16 @@ function renderCommits() {
       if (state.rangeFrom && state.rangeFrom !== c.sha) {
         state.mode = 'range';
         state.commitSha = null;
-        $$('.mode').forEach(b => b.classList.remove('active'));
-        state.diff = await api(
-          `/api/diff?mode=range&base=${encodeURIComponent(state.rangeFrom)}&head=${encodeURIComponent(c.sha)}`
-        );
+        state.base = state.rangeFrom;
+        state.head = c.sha;
       } else {
         state.mode = 'commit';
         state.commitSha = c.sha;
-        $$('.mode').forEach(b => b.classList.remove('active'));
-        state.diff = await api(`/api/diff?mode=commit&sha=${encodeURIComponent(c.sha)}`);
+        state.base = null;
+        state.head = null;
       }
-      render();
+      $$('.mode').forEach(b => b.classList.remove('active'));
+      await loadDiff();
       writeHash();
       closeSidebarIfMobile();
     };
@@ -244,9 +242,17 @@ async function loadComments() {
 
 async function loadDiff() {
   let url = `/api/diff?mode=${state.mode}`;
-  if (state.mode === 'branch') {
+  if (state.mode === 'commit') {
+    if (state.commitSha) url += `&sha=${encodeURIComponent(state.commitSha)}`;
+  } else if (state.mode === 'range') {
     if (state.base) url += `&base=${encodeURIComponent(state.base)}`;
     if (state.head) url += `&head=${encodeURIComponent(state.head)}`;
+  } else if (state.mode === 'branch') {
+    if (state.base) url += `&base=${encodeURIComponent(state.base)}`;
+    if (state.head) url += `&head=${encodeURIComponent(state.head)}`;
+  } else {
+    // working mode optionally takes a base ref (e.g. 'compare vs working tree')
+    if (state.base) url += `&base=${encodeURIComponent(state.base)}`;
   }
   if (state.ignoreWs) url += '&ignore_ws=1';
   state.diff = await api(url);
@@ -307,18 +313,19 @@ function renderCommitMessage(commit) {
     for (const l of commit.body.split('\n')) lines.push(l);
   }
   for (let i = 0; i < lines.length; i++) {
-    tbody.appendChild(makeMessageRow(lines[i], i + 1, i === 0));
+    tbody.appendChild(makeMessageRow(lines[i], i + 1, i === 0, commit.sha));
   }
   wrap.appendChild(table);
   return wrap;
 }
 
-function makeMessageRow(text, lineNum, isSubject) {
+function makeMessageRow(text, lineNum, isSubject, sha) {
   const row = document.createElement('tr');
   row.className = 'msg' + (isSubject ? ' subject' : '');
   row.dataset.side = 'msg';
   row.dataset.line = String(lineNum);
   row.dataset.path = COMMIT_MSG_FILE;
+  row.dataset.head = sha || '';
   row.innerHTML = `
     <td class="gutter" title="Add comment">+</td>
     <td class="content">${escapeHTML(text)}</td>
@@ -627,6 +634,15 @@ function computeWordDiffs(lines, language) {
 // Syntax-highlight `text` and wrap the given [start, end) character
 // ranges in `<span class="word">…</span>`, splitting through any hljs
 // spans so the syntax color stays intact.
+// Don't split a UTF-16 surrogate pair when slicing text by index — the
+// high surrogate (D800..DBFF) must stay attached to its low surrogate.
+function snapToCodepoint(s, i) {
+  if (i <= 0 || i >= s.length) return i;
+  const c = s.charCodeAt(i - 1);
+  if (c >= 0xD800 && c <= 0xDBFF) return i + 1;
+  return i;
+}
+
 function highlightWithWordSpans(text, language, ranges) {
   const html = highlightCode(text, language);
   if (!ranges.length) return html;
@@ -653,7 +669,9 @@ function highlightWithWordSpans(text, language, ranges) {
     const parent = node.parentNode;
     const frag = document.createDocumentFragment();
     let last = 0;
-    for (const [a, b] of hits) {
+    for (let [a, b] of hits) {
+      a = snapToCodepoint(t, a);
+      b = snapToCodepoint(t, b);
       if (a > last) frag.appendChild(document.createTextNode(t.slice(last, a)));
       const span = document.createElement('span');
       span.className = 'word';
@@ -768,14 +786,16 @@ function openCommentForm(row) {
 
 function renderInlineComments() {
   $$('.comment-thread-row, .file-thread-block').forEach(r => r.remove());
+  // Group comments by their anchor. Use JSON.stringify so file paths
+  // that contain delimiters can't collide with each other.
   const grouped = new Map();
   for (const c of state.comments) {
-    const key = `${c.file}|${c.side}|${c.line ?? ''}`;
+    const key = JSON.stringify([c.file, c.side, c.line ?? null, c.head ?? null]);
     if (!grouped.has(key)) grouped.set(key, []);
     grouped.get(key).push(c);
   }
   for (const [key, list] of grouped) {
-    const [file, side] = key.split('|');
+    const [file, side, , head] = JSON.parse(key);
     if (side === 'file') {
       // Attach a block-level thread under each matching file-header.
       const headers = $$(`.file-header[data-path="${cssEscape(file)}"]`);
@@ -787,8 +807,13 @@ function renderInlineComments() {
       }
       continue;
     }
-    const line = key.split('|')[2];
-    const sel = `tr[data-path="${cssEscape(file)}"][data-side="${side}"][data-line="${line}"]`;
+    const line = JSON.parse(key)[2];
+    // Commit-message comments must match the originating commit's sha so
+    // a msg comment on commit A doesn't leak onto commit B's message.
+    const headFilter = side === 'msg' && head
+      ? `[data-head="${cssEscape(head)}"]`
+      : '';
+    const sel = `tr[data-path="${cssEscape(file)}"][data-side="${side}"][data-line="${line}"]${headFilter}`;
     const rows = $$(sel);
     for (const row of rows) {
       const tr = document.createElement('tr');
@@ -931,9 +956,15 @@ function renderCommentSidebar() {
     li.className = 'comment-row' + (c.resolved ? ' resolved' : '');
     li.innerHTML = `<div class="where">${escapeHTML(prettyCommentAnchor(c))}</div><div>${escapeHTML(c.text.slice(0, 120))}</div>`;
     li.onclick = () => {
-      const sel = c.side === 'file'
-        ? `.file-header[data-path="${cssEscape(c.file)}"]`
-        : `tr[data-path="${cssEscape(c.file)}"][data-side="${c.side}"][data-line="${c.line}"]`;
+      let sel;
+      if (c.side === 'file') {
+        sel = `.file-header[data-path="${cssEscape(c.file)}"]`;
+      } else {
+        const headFilter = c.side === 'msg' && c.head
+          ? `[data-head="${cssEscape(c.head)}"]`
+          : '';
+        sel = `tr[data-path="${cssEscape(c.file)}"][data-side="${c.side}"][data-line="${c.line}"]${headFilter}`;
+      }
       const row = document.querySelector(sel);
       if (row) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
     };
@@ -950,7 +981,8 @@ function cssEscape(s) {
 
 async function setMode(mode) {
   state.mode = mode;
-  state.head = null;       // clicking the mode buttons resets to the current branch
+  state.base = null;       // clicking the mode buttons drops any pinned base/head
+  state.head = null;       // and resets to the current branch / default base
   state.commitSha = null;
   state.rangeFrom = null;  // and clears any pending range comparison
   $$('.mode').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
@@ -1002,14 +1034,18 @@ function initSidebarResizer() {
     handle.setPointerCapture(e.pointerId);
     document.body.classList.add('resizing-sidebar');
     const move = (ev) => applySidebarWidth(ev.clientX);
-    const up = (ev) => {
-      handle.releasePointerCapture(e.pointerId);
+    const stop = () => {
+      try { handle.releasePointerCapture(e.pointerId); } catch (_) {}
       handle.removeEventListener('pointermove', move);
-      handle.removeEventListener('pointerup', up);
+      handle.removeEventListener('pointerup', stop);
+      handle.removeEventListener('pointercancel', stop);
+      handle.removeEventListener('lostpointercapture', stop);
       document.body.classList.remove('resizing-sidebar');
     };
     handle.addEventListener('pointermove', move);
-    handle.addEventListener('pointerup', up);
+    handle.addEventListener('pointerup', stop);
+    handle.addEventListener('pointercancel', stop);
+    handle.addEventListener('lostpointercapture', stop);
   });
   handle.addEventListener('dblclick', () => applySidebarWidth(280));
 }

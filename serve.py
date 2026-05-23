@@ -25,7 +25,7 @@ HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$")
 
 REPO: Path = Path.cwd()
 COMMENTS_PATH: Path = Path()
-COMMENTS_LOCK = threading.Lock()
+COMMENTS_LOCK = threading.RLock()
 TOKEN: str = ""  # required URL prefix; empty disables the check
 
 EXT_LANG = {
@@ -110,12 +110,22 @@ def parse_unified_diff(text: str) -> list[dict]:
             cur_file["language"] = language_for(cur_file["new_path"])
         elif raw.startswith("Binary files"):
             cur_file["binary"] = True
-        elif raw.startswith("--- "):
+        elif cur_hunk is None and raw.startswith("--- "):
+            # File-header marker only meaningful in the pre-hunk preamble;
+            # once we're inside a hunk, `--- foo` is just a deleted line
+            # whose text happens to start with `-- `.
             if raw == "--- /dev/null":
                 cur_file["old_path"] = None
-        elif raw.startswith("+++ "):
+                # `git diff --no-index /dev/null foo` (used for untracked
+                # files) lacks a `new file mode` header, so promote the
+                # status here.
+                if cur_file["status"] == "modified":
+                    cur_file["status"] = "added"
+        elif cur_hunk is None and raw.startswith("+++ "):
             if raw == "+++ /dev/null":
                 cur_file["new_path"] = None
+                if cur_file["status"] == "modified":
+                    cur_file["status"] = "deleted"
         elif raw.startswith("@@"):
             m = HUNK_RE.match(raw)
             if not m:
@@ -307,12 +317,13 @@ def get_commits(limit: int = 20) -> list[dict]:
 
 
 def load_comments() -> dict:
-    if not COMMENTS_PATH.exists():
-        return {"comments": []}
-    try:
-        return json.loads(COMMENTS_PATH.read_text())
-    except json.JSONDecodeError:
-        return {"comments": []}
+    with COMMENTS_LOCK:
+        if not COMMENTS_PATH.exists():
+            return {"comments": []}
+        try:
+            return json.loads(COMMENTS_PATH.read_text() or '{"comments":[]}')
+        except json.JSONDecodeError:
+            return {"comments": []}
 
 
 def save_comments(data: dict) -> None:
@@ -323,14 +334,21 @@ def save_comments(data: dict) -> None:
 
 
 MAX_TEXT = 32 * 1024  # 32 KB per comment / reply
+MAX_REF = 4 * 1024    # 4 KB per ref-ish string field (file path, sha, mode, base, head)
 
 
-def _check_text(text: str, field: str = "text") -> str:
+def _check_text(text: str, field: str = "text", limit: int = MAX_TEXT) -> str:
     if not isinstance(text, str):
         raise ValueError(f"{field} must be a string")
-    if len(text) > MAX_TEXT:
-        raise ValueError(f"{field} too long ({len(text)} chars; max {MAX_TEXT})")
+    if len(text) > limit:
+        raise ValueError(f"{field} too long ({len(text)} chars; max {limit})")
     return text
+
+
+def _check_ref(value, field: str):
+    if value is None:
+        return None
+    return _check_text(value, field, MAX_REF)
 
 
 def add_comment(payload: dict) -> dict:
@@ -341,6 +359,10 @@ def add_comment(payload: dict) -> dict:
     if payload["side"] not in ("old", "new", "msg", "file"):
         raise ValueError("side must be old, new, msg, or file")
     _check_text(payload["text"])
+    _check_ref(payload["file"], "file")
+    _check_ref(payload.get("mode"), "mode")
+    _check_ref(payload.get("base"), "base")
+    _check_ref(payload.get("head"), "head")
     line = payload.get("line")
     # 'file'-level comments aren't anchored to a line; everything else is.
     if payload["side"] == "file":
@@ -349,8 +371,6 @@ def add_comment(payload: dict) -> dict:
         if line is None:
             raise ValueError("line is required for line-anchored comments")
         line = int(line)
-    with COMMENTS_LOCK:
-        data = load_comments() if not COMMENTS_PATH.exists() else json.loads(COMMENTS_PATH.read_text() or '{"comments":[]}')
     entry = {
         "id": uuid.uuid4().hex[:12],
         "file": payload["file"],
@@ -365,23 +385,26 @@ def add_comment(payload: dict) -> dict:
         "replies": [],
         "created": datetime.now(timezone.utc).isoformat(),
     }
-    data.setdefault("comments", []).append(entry)
-    save_comments(data)
+    with COMMENTS_LOCK:
+        data = load_comments()
+        data.setdefault("comments", []).append(entry)
+        save_comments(data)
     return entry
 
 
 def update_comment(cid: str, payload: dict) -> dict | None:
     if "text" in payload:
         _check_text(payload["text"])
-    data = load_comments()
-    for c in data.get("comments", []):
-        if c["id"] == cid:
-            for k in ("text", "resolved", "seen"):
-                if k in payload:
-                    c[k] = payload[k]
-            c["updated"] = datetime.now(timezone.utc).isoformat()
-            save_comments(data)
-            return c
+    with COMMENTS_LOCK:
+        data = load_comments()
+        for c in data.get("comments", []):
+            if c["id"] == cid:
+                for k in ("text", "resolved", "seen"):
+                    if k in payload:
+                        c[k] = payload[k]
+                c["updated"] = datetime.now(timezone.utc).isoformat()
+                save_comments(data)
+                return c
     return None
 
 
@@ -390,21 +413,22 @@ def add_reply(cid: str, payload: dict) -> dict | None:
     if not text:
         raise ValueError("reply text is required")
     _check_text(text, "reply text")
-    data = load_comments()
-    for c in data.get("comments", []):
-        if c["id"] == cid:
-            reply = {
-                "by": payload.get("by") or "agent",
-                "text": text,
-                "created": datetime.now(timezone.utc).isoformat(),
-            }
-            c.setdefault("replies", []).append(reply)
-            c["updated"] = reply["created"]
-            # adding a reply implies the responder has now seen it
-            if payload.get("by") in (None, "agent"):
-                c["seen"] = True
-            save_comments(data)
-            return reply
+    with COMMENTS_LOCK:
+        data = load_comments()
+        for c in data.get("comments", []):
+            if c["id"] == cid:
+                reply = {
+                    "by": payload.get("by") or "agent",
+                    "text": text,
+                    "created": datetime.now(timezone.utc).isoformat(),
+                }
+                c.setdefault("replies", []).append(reply)
+                c["updated"] = reply["created"]
+                # adding a reply implies the responder has now seen it
+                if payload.get("by") in (None, "agent"):
+                    c["seen"] = True
+                save_comments(data)
+                return reply
     return None
 
 
@@ -417,13 +441,14 @@ def unseen_comments() -> list[dict]:
 
 
 def delete_comment(cid: str) -> bool:
-    data = load_comments()
-    before = len(data.get("comments", []))
-    data["comments"] = [c for c in data.get("comments", []) if c["id"] != cid]
-    if len(data["comments"]) == before:
-        return False
-    save_comments(data)
-    return True
+    with COMMENTS_LOCK:
+        data = load_comments()
+        before = len(data.get("comments", []))
+        data["comments"] = [c for c in data.get("comments", []) if c["id"] != cid]
+        if len(data["comments"]) == before:
+            return False
+        save_comments(data)
+        return True
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -546,7 +571,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 })
                 return
             if url.path == "/api/commits":
-                limit = int(q.get("limit", ["20"])[0])
+                raw_limit = q.get("limit", ["20"])[0]
+                try:
+                    limit = int(raw_limit)
+                except ValueError:
+                    raise ValueError(f"limit must be an integer (got {raw_limit!r})")
+                limit = max(1, min(limit, 500))  # clamp to sane range
                 base = detect_default_base()
                 bp = git("merge-base", "--end-of-options", "HEAD", base, check=False).strip()
                 self._json(200, {
@@ -585,6 +615,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     self._json(200, load_comments())
                 return
             self._json(404, {"error": "not found"})
+        except ValueError as e:
+            self._json(400, {"error": str(e)})
         except Exception as e:
             self._json(500, {"error": str(e)})
 
@@ -668,29 +700,69 @@ class ThreadingServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 def ensure_self_signed_cert() -> tuple[Path, Path]:
     """Return (cert_path, key_path), generating a self-signed pair on first
     use and caching it under ~/.cache/agent-review/. Regenerates if the
-    cert is expired or missing. Requires the `openssl` CLI on PATH."""
+    cert is expired or missing, or if the cached pair isn't owned by
+    the current user (defends against a shared HOME where another user
+    could plant a cert+key we'd otherwise trust). Requires `openssl`."""
+    import shutil
+    if not shutil.which("openssl"):
+        raise RuntimeError("openssl CLI not found on PATH; --https requires it")
     cache_dir = Path.home() / ".cache" / "agent-review"
     cache_dir.mkdir(parents=True, exist_ok=True)
+    # Tighten the directory mode in case it pre-existed with looser bits.
+    try:
+        cache_dir.chmod(0o700)
+    except OSError:
+        pass
     cert = cache_dir / "cert.pem"
     key = cache_dir / "key.pem"
-    if cert.exists() and key.exists():
+
+    def _trustworthy(p: Path) -> bool:
+        if not p.exists():
+            return False
+        st = p.stat()
+        # Reject files owned by another user, or world/group-writable keys.
+        if st.st_uid != os.getuid():
+            return False
+        if p == key and st.st_mode & 0o077:
+            return False
+        return True
+
+    if _trustworthy(cert) and _trustworthy(key):
         # Check expiry: regenerate if cert expires within 30 days.
+        try:
+            r = subprocess.run(
+                ["openssl", "x509", "-in", str(cert), "-checkend", str(30 * 86400), "-noout"],
+                capture_output=True,
+            )
+            if r.returncode == 0:
+                return cert, key
+        except FileNotFoundError:
+            raise RuntimeError("openssl CLI not found on PATH; --https requires it")
+    # Drop any untrusted leftovers before regenerating.
+    for stale in (cert, key):
+        if stale.exists():
+            try:
+                stale.unlink()
+            except OSError:
+                pass
+    try:
         r = subprocess.run(
-            ["openssl", "x509", "-in", str(cert), "-checkend", str(30 * 86400), "-noout"],
-            capture_output=True,
+            ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-sha256",
+             "-days", "365", "-nodes",
+             "-keyout", str(key), "-out", str(cert),
+             "-subj", "/CN=agent-review",
+             "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1"],
+            capture_output=True, text=True,
         )
-        if r.returncode == 0:
-            return cert, key
-    r = subprocess.run(
-        ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-sha256",
-         "-days", "365", "-nodes",
-         "-keyout", str(key), "-out", str(cert),
-         "-subj", "/CN=agent-review",
-         "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1"],
-        capture_output=True, text=True,
-    )
+    except FileNotFoundError:
+        raise RuntimeError("openssl CLI not found on PATH; --https requires it")
     if r.returncode != 0:
         raise RuntimeError(f"openssl failed: {r.stderr.strip() or r.stdout.strip()}")
+    # The cert is public, but tighten the private key down to 0600.
+    try:
+        key.chmod(0o600)
+    except OSError:
+        pass
     return cert, key
 
 
