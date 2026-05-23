@@ -285,7 +285,7 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
 }
 .file-header .file-comment-btn:hover { color: var(--accent); border-color: var(--accent); }
 .file-comment-form {
-  padding: 8px 12px;
+  padding: 4px 8px;
   background: var(--comment-bg);
   border-bottom: 1px solid var(--comment-border);
 }
@@ -307,7 +307,7 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
 .file-comment-form button.primary {
   background: var(--accent); border-color: var(--accent); color: white;
 }
-.file-thread-block { padding: 6px 12px; background: var(--comment-bg); border-bottom: 1px solid var(--comment-border); }
+.file-thread-block { padding: 2px 8px; background: var(--comment-bg); border-bottom: 1px solid var(--comment-border); }
 
 /* Comment forms and threads should NOT inherit the diff-table's full
  * width (which stretches to the widest line). Stick them to the left
@@ -435,8 +435,8 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
   background: var(--comment-bg);
   border: 1px solid var(--comment-border);
   border-radius: 6px;
-  padding: 8px;
-  margin: 4px 0;
+  padding: 4px 8px;
+  margin: 2px 0;
   white-space: normal;
   font-family: system-ui, sans-serif;
   font-size: 13px;
@@ -524,8 +524,8 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 8px;
-  margin: 4px 0;
+  padding: 4px 8px;
+  margin: 2px 0;
   white-space: normal;
   font-family: system-ui, sans-serif;
 }
