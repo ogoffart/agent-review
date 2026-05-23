@@ -171,7 +171,8 @@ def get_diff(mode: str, base: str | None = None, sha: str | None = None,
     if ignore_ws:
         opts.append("-w")  # --ignore-all-space
     if mode == "working":
-        diff_text = git("diff", *opts, "HEAD")
+        base_ref = base or "HEAD"
+        diff_text = git("diff", *opts, base_ref)
         # Include untracked files so they show up in the sidebar too.
         # `git diff --no-index` exits 1 when files differ — expected here.
         untracked = git(
@@ -186,7 +187,7 @@ def get_diff(mode: str, base: str | None = None, sha: str | None = None,
             )
         return {
             "mode": "working",
-            "base": "HEAD",
+            "base": base_ref,
             "head": current_branch(),
             "files": parse_unified_diff(diff_text),
         }
@@ -470,7 +471,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return
             if url.path == "/api/commits":
                 limit = int(q.get("limit", ["20"])[0])
-                self._json(200, {"commits": get_commits(limit)})
+                base = detect_default_base()
+                bp = git("merge-base", "HEAD", base, check=False).strip()
+                self._json(200, {
+                    "commits": get_commits(limit),
+                    "branch_point": bp or None,
+                    "base": base,
+                })
                 return
             if url.path == "/api/diff":
                 mode = q.get("mode", ["working"])[0]
@@ -577,6 +584,13 @@ class ThreadingServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 def main() -> int:
     import secrets
     global REPO, COMMENTS_PATH, TOKEN
+    # Flush startup lines as they're printed so callers reading the
+    # process's stdout (e.g. an agent harness) see the URL and token
+    # without having to pass `python3 -u`.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except Exception:
+        pass
     ap = argparse.ArgumentParser(description="Local web UI for reviewing agent diffs.")
     ap.add_argument("--repo", default=os.environ.get("AGENT_REVIEW_REPO", os.getcwd()),
                     help="git repo to review (default: cwd)")

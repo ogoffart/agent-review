@@ -182,7 +182,37 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
   font-size: 11px !important;
 }
 .range-banner .sha { color: white; font-family: var(--mono); font-weight: 600; }
-.range-banner:hover { opacity: .9; }
+.range-banner .vs-wt-btn {
+  background: rgba(255, 255, 255, .2);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, .4);
+  border-radius: 3px;
+  padding: 1px 6px;
+  font: inherit;
+  cursor: pointer;
+}
+.range-banner .vs-wt-btn:hover { background: rgba(255, 255, 255, .35); }
+.range-banner .clear { cursor: pointer; opacity: .8; padding: 0 4px; }
+.range-banner .clear:hover { opacity: 1; }
+#commit-list li.branch-point {
+  font-family: system-ui, sans-serif;
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  padding: 4px 0;
+  cursor: default;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+#commit-list li.branch-point::before,
+#commit-list li.branch-point::after {
+  content: "";
+  flex: 1;
+  border-top: 1px dashed var(--border);
+}
+#commit-list li.branch-point:hover { background: transparent; }
 .branch-row { display: flex; gap: 6px; align-items: baseline; }
 .branch-row .bullet { color: var(--muted); width: 1ch; }
 .branch-row.current .bullet { color: var(--accent); }

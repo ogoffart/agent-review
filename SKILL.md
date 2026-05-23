@@ -57,9 +57,19 @@ python3 "$SKILL_DIR/serve.py" \
 ```
 
 Use the harness's background-task facility (`run_in_background: true`)
-so the server keeps serving while you continue working. Poll
-`http://127.0.0.1:<port>/api/info` until it returns 200 before
-reporting the URL to the user.
+so the server keeps serving while you continue working. On startup the
+server prints four lines to stdout, the last of which is:
+
+```
+  open:     http://<host>:<port>/<token>/
+```
+
+Read that line out of the background-task's output file and report the
+exact URL (token included) to the user. The server is ready as soon as
+this line appears — no further polling is needed.
+
+Note: every other path returns 404 without the `/<token>/` prefix, so
+the URL must be passed to the user verbatim.
 
 Flags:
 

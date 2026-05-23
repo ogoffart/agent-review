@@ -9,7 +9,6 @@ const state = {
   diff: null,
   comments: [],
   info: null,
-  branches: [],
   commits: [],
 };
 
@@ -36,7 +35,7 @@ function diffSpec() {
   const d = state.diff;
   if (!d) return '';
   switch (d.mode) {
-    case 'working': return 'git diff HEAD';
+    case 'working': return `git diff ${d.base || 'HEAD'}`;
     case 'branch':  return `git diff ${d.base} ${d.head}`;
     case 'commit':  return `git show ${d.head}`;
     case 'range':   return `git diff ${d.base}..${d.head}`;
@@ -62,6 +61,8 @@ function updateHeader() {
 async function loadCommits() {
   const data = await api('/api/commits?limit=20');
   state.commits = data.commits || [];
+  state.branchPoint = data.branch_point || null;
+  state.branchBase = data.base || null;
   renderCommits();
 }
 
@@ -73,13 +74,39 @@ function renderCommits() {
     const banner = document.createElement('li');
     banner.className = 'range-banner';
     const short = state.rangeFrom.slice(0, 7);
-    banner.innerHTML = `Comparing from <span class="sha">${escapeHTML(short)}</span> → click another commit ⨯`;
-    banner.title = 'Click to clear';
-    banner.onclick = () => { state.rangeFrom = null; renderCommits(); };
+    banner.innerHTML = `From <span class="sha">${escapeHTML(short)}</span> → pick a commit, or <button class="vs-wt-btn">working tree</button> <span class="clear" title="Cancel">⨯</span>`;
+    banner.querySelector('.vs-wt-btn').onclick = async (e) => {
+      e.stopPropagation();
+      const from = state.rangeFrom;
+      state.rangeFrom = null;
+      state.mode = 'working';
+      $$('.mode').forEach(b => b.classList.remove('active'));
+      state.diff = await api(`/api/diff?mode=working&base=${encodeURIComponent(from)}${state.ignoreWs ? '&ignore_ws=1' : ''}`);
+      render();
+      renderCommits();
+      closeSidebarIfMobile();
+    };
+    banner.querySelector('.clear').onclick = (e) => {
+      e.stopPropagation();
+      state.rangeFrom = null;
+      renderCommits();
+    };
     ul.appendChild(banner);
   }
 
+  // Suppress the branch-point divider when HEAD == base (no divergence,
+  // so the divider would land above the first commit and just be noise).
+  const showBranchPoint = state.branchPoint
+    && state.branchBase
+    && state.branchPoint !== state.commits[0]?.sha;
   for (const c of state.commits) {
+    if (showBranchPoint && c.sha === state.branchPoint) {
+      const sep = document.createElement('li');
+      sep.className = 'branch-point';
+      sep.innerHTML = `<span>↑ on this branch · ${escapeHTML(state.branchBase)} ↓</span>`;
+      sep.title = `Branch point: HEAD diverged from ${state.branchBase} at this commit`;
+      ul.appendChild(sep);
+    }
     const li = document.createElement('li');
     li.className = 'commit-row';
     if (c.sha === state.rangeFrom) li.classList.add('from-selected');
@@ -129,43 +156,6 @@ async function loadDiff() {
   if (state.ignoreWs) url += '&ignore_ws=1';
   state.diff = await api(url);
   render();
-  renderBranches();
-}
-
-async function loadBranches() {
-  const data = await api('/api/branches');
-  state.branches = data.branches || [];
-  renderBranches();
-}
-
-function renderBranches() {
-  const ul = $('#branch-list');
-  if (!ul) return;
-  ul.innerHTML = '';
-  $('#branch-count').textContent = state.branches.length ? `(${state.branches.length})` : '';
-  const activeHead = state.head || state.info?.branch;
-  for (const b of state.branches) {
-    const li = document.createElement('li');
-    li.className = 'branch-row';
-    if (b.name === activeHead && state.mode === 'branch') li.classList.add('active');
-    if (b.current) li.classList.add('current');
-    li.innerHTML = `
-      <span class="bullet">${b.current ? '●' : '○'}</span>
-      <span class="name">${escapeHTML(b.name)}</span>
-      <span class="muted sha">${escapeHTML(b.sha)}</span>
-    `;
-    li.title = `${b.name}\n${b.subject}\n${b.date}`;
-    li.onclick = () => switchToBranch(b.name);
-    ul.appendChild(li);
-  }
-}
-
-async function switchToBranch(name) {
-  state.mode = 'branch';
-  state.head = name;
-  $$('.mode').forEach(b => b.classList.toggle('active', b.dataset.mode === 'branch'));
-  await loadDiff();
-  closeSidebarIfMobile();
 }
 
 function render() {
@@ -736,7 +726,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   };
   $$('.mode').forEach(b => b.onclick = () => setMode(b.dataset.mode));
   $('#refresh').onclick = async () => {
-    await Promise.all([loadDiff(), loadComments(), loadCommits(), loadBranches()]);
+    await Promise.all([loadDiff(), loadComments(), loadCommits()]);
   };
   $('#sidebar-toggle').onclick = () => document.body.classList.toggle('sidebar-open');
   $('#sidebar-backdrop').onclick = () => document.body.classList.remove('sidebar-open');
