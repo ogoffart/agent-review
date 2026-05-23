@@ -334,13 +334,13 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
 }
 .diff-table tr:hover td.gutter { color: var(--accent); }
 .diff-table td.content { width: 100%; }
-.diff-table tr.add td.content { background: var(--add-bg); }
+.diff-table tr.add td.content { background: var(--add-line); }
 .diff-table tr.add td.gutter { background: var(--add-line); }
-.diff-table tr.del td.content { background: var(--del-bg); }
+.diff-table tr.del td.content { background: var(--del-line); }
 .diff-table tr.del td.gutter { background: var(--del-line); }
-.diff-table tr.add.moved td.content { background: var(--add-bg-moved); }
+.diff-table tr.add.moved td.content { background: var(--add-line-moved); }
 .diff-table tr.add.moved td.gutter { background: var(--add-line-moved); }
-.diff-table tr.del.moved td.content { background: var(--del-bg-moved); }
+.diff-table tr.del.moved td.content { background: var(--del-line-moved); }
 .diff-table tr.del.moved td.gutter { background: var(--del-line-moved); }
 .diff-table td.content .sym {
   color: var(--muted);
@@ -385,14 +385,11 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
   color: var(--accent);
   border-color: var(--accent);
 }
-.diff-table tr.add td.content .word,
-.diff-table tr.del td.content .word {
-  background: transparent;
-  box-shadow: inset 0 -2px 0 0;
-  border-radius: 0;
-}
-.diff-table tr.add td.content .word { color: inherit; box-shadow: inset 0 -2px 0 0 var(--add-word); }
-.diff-table tr.del td.content .word { color: inherit; box-shadow: inset 0 -2px 0 0 var(--del-word); }
+/* .word marks the *unchanged* portion of a word-diff line; it gets a
+ * lighter background than the line tint so the real change reads as
+ * the foreground. */
+.diff-table tr.add td.content .word { background: var(--add-bg); }
+.diff-table tr.del td.content .word { background: var(--del-bg); }
 
 .diff-table tr.comment-row-tr td {
   background: transparent; padding: 6px;
