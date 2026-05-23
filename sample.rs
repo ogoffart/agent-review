@@ -94,19 +94,6 @@ impl Greet for Person {
     }
 }
 
-fn sum_squares_below(limit: u64) -> u64 {
-    (1..limit).map(|x| x * x).sum()
-}
-
-fn collatz(mut n: u64) -> Vec<u64> {
-    let mut seq = vec![n];
-    while n != 1 {
-        n = if n % 2 == 0 { n / 2 } else { 3 * n + 1 };
-        seq.push(n);
-    }
-    seq
-}
-
 #[derive(Debug)]
 enum ParseError {
     Empty,
@@ -131,22 +118,39 @@ fn apply<T, F: Fn(T) -> T>(x: T, f: F) -> T {
     f(x)
 }
 
-fn longest_run<T: PartialEq>(xs: &[T]) -> usize {
-    let mut best = 0;
-    let mut cur = 0;
-    let mut prev: Option<&T> = None;
-    for x in xs {
-        if Some(x) == prev {
-            cur += 1;
-        } else {
-            cur = 1;
-            prev = Some(x);
-        }
-        if cur > best {
-            best = cur;
-        }
+fn sum_squares_below(limit: u64) -> u64 {
+    (1..limit).map(|x| x * x).sum()
+}
+
+fn collatz(mut n: u64) -> Vec<u64> {
+    let mut seq = vec![n];
+    while n != 1 {
+        n = if n % 2 == 0 { n / 2 } else { 3 * n + 1 };
+        seq.push(n);
     }
-    best
+    seq
+}
+
+fn longest_run<T: PartialEq>(xs: &[T]) -> usize {
+    if xs.is_empty() {
+        0
+    } else {
+        let mut best = 0;
+        let mut cur = 0;
+        let mut prev: Option<&T> = None;
+        for x in xs {
+            if Some(x) == prev {
+                cur += 1;
+            } else {
+                cur = 1;
+                prev = Some(x);
+            }
+            if cur > best {
+                best = cur;
+            }
+        }
+        best
+    }
 }
 
 fn main() {
