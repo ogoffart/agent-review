@@ -423,10 +423,12 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
  * the foreground. */
 .diff-table tr.add td.content .word,
 .diff-table tr.del td.content .word {
-  /* fill the full row height; the parent has line-height: 1.5 */
-  padding: 0.25em 0;
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
+  /* Render as an inline box that occupies the full line-height of the
+     containing row, so the lighter "unchanged" tint paints from row
+     top to row bottom without leaving an outline above/below. */
+  display: inline-block;
+  line-height: 1.5;
+  vertical-align: top;
 }
 .diff-table tr.add td.content .word { background: var(--add-bg); }
 .diff-table tr.del td.content .word { background: var(--del-bg); }
@@ -528,6 +530,11 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
   margin: 0;
   white-space: normal;
   font-family: system-ui, sans-serif;
+  /* Flexbox strips the anonymous text nodes that the template's inter-tag
+     whitespace creates — without this, each gap renders an empty line
+     of line-height: 1.5 inherited from .diff-table. */
+  display: flex;
+  flex-direction: column;
 }
 .comment-form textarea {
   width: 100%;
