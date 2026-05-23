@@ -398,10 +398,11 @@ function renderFile(file, idx) {
         };
       }
     }
-    // Suppress the @@ separator when the hunk starts at line 0 — the
-    // file didn't exist on that side (new file, or deleted file), so
-    // there's no preceding context to mark.
-    if (hunk.old_start !== 0 && hunk.new_start !== 0) {
+    // Suppress the @@ separator when the hunk has no preceding context
+    // on either side — i.e., it starts at the very top of the file (or
+    // the file didn't exist on that side, in which case start=0). The
+    // divider would point at nothing and only add noise above line 1.
+    if (hunk.old_start > 1 || hunk.new_start > 1) {
       tbody.appendChild(makeHunkRow(file, hunk, gap));
     }
 
