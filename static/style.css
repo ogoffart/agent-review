@@ -266,6 +266,9 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
 .file-header .status.added { background: var(--add-line); color: #0a4220; }
 .file-header .status.deleted { background: var(--del-line); color: #67191f; }
 .file-header .status.renamed { background: var(--hunk-bg); color: var(--hunk-fg); }
+.file-header .status.commit { background: var(--accent); color: white; font-family: var(--mono); text-transform: none; }
+.msg-table tr.msg td.content { font-family: var(--mono); white-space: pre-wrap; }
+.msg-table tr.msg.subject td.content { font-weight: 600; }
 .file-header .uncommitted {
   font-size: 10px; padding: 1px 6px; border-radius: 10px;
   background: var(--comment-bg); color: var(--comment-border);

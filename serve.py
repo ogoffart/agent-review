@@ -210,10 +210,24 @@ def get_diff(mode: str, base: str | None = None, sha: str | None = None,
         if not sha:
             raise ValueError("commit mode requires sha")
         diff_text = git("show", *opts, "--pretty=format:", sha)
+        sep = "\x1f"
+        fmt = sep.join(["%H", "%h", "%s", "%b", "%an", "%ae", "%aI"])
+        meta_raw = git("log", "-1", f"--format={fmt}", sha).rstrip("\n")
+        parts = meta_raw.split(sep)
+        commit_meta = {
+            "sha":     parts[0] if len(parts) > 0 else sha,
+            "short":   parts[1] if len(parts) > 1 else sha[:7],
+            "subject": parts[2] if len(parts) > 2 else "",
+            "body":    parts[3] if len(parts) > 3 else "",
+            "author":  parts[4] if len(parts) > 4 else "",
+            "email":   parts[5] if len(parts) > 5 else "",
+            "date":    parts[6] if len(parts) > 6 else "",
+        }
         return {
             "mode": "commit",
             "base": f"{sha}^",
             "head": sha,
+            "commit": commit_meta,
             "files": parse_unified_diff(diff_text),
         }
     if mode == "range":

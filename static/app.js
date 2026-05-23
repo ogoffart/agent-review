@@ -179,8 +179,59 @@ function render() {
     fileList.appendChild(li);
   });
 
+  if (state.diff?.commit) {
+    root.appendChild(renderCommitMessage(state.diff.commit));
+  }
   files.forEach((f, i) => root.appendChild(renderFile(f, i)));
   renderInlineComments();
+}
+
+const COMMIT_MSG_FILE = ':commit-message';
+
+function renderCommitMessage(commit) {
+  const wrap = document.createElement('div');
+  wrap.className = 'file commit-message';
+  wrap.id = 'commit-message';
+  const header = document.createElement('div');
+  header.className = 'file-header';
+  header.innerHTML = `
+    <span class="status commit">commit ${escapeHTML(commit.short)}</span>
+    <span class="path">${escapeHTML(commit.author)}</span>
+    <span class="muted">${escapeHTML(commit.date)}</span>
+  `;
+  wrap.appendChild(header);
+  const table = document.createElement('table');
+  table.className = 'diff-table msg-table';
+  const tbody = document.createElement('tbody');
+  table.appendChild(tbody);
+  // line 1 = subject; blank line; body lines starting at 3.
+  const lines = [commit.subject || ''];
+  if (commit.body) {
+    lines.push('');
+    for (const l of commit.body.split('\n')) lines.push(l);
+  }
+  for (let i = 0; i < lines.length; i++) {
+    tbody.appendChild(makeMessageRow(lines[i], i + 1, i === 0));
+  }
+  wrap.appendChild(table);
+  return wrap;
+}
+
+function makeMessageRow(text, lineNum, isSubject) {
+  const row = document.createElement('tr');
+  row.className = 'msg' + (isSubject ? ' subject' : '');
+  row.dataset.side = 'msg';
+  row.dataset.line = String(lineNum);
+  row.dataset.path = COMMIT_MSG_FILE;
+  row.innerHTML = `
+    <td class="gutter" title="Add comment">+</td>
+    <td class="content">${escapeHTML(text)}</td>
+  `;
+  row.querySelector('.gutter').onclick = (e) => {
+    e.stopPropagation();
+    openCommentForm(row);
+  };
+  return row;
 }
 
 function renderFile(file, idx) {
@@ -521,7 +572,7 @@ function renderCommentThread(c) {
   const replies = c.replies || [];
   el.innerHTML = `
     <div class="meta">
-      <strong>${escapeHTML(c.file)}:${c.line}</strong>
+      <strong>${escapeHTML(prettyCommentAnchor(c))}</strong>
       <span>·</span>
       <span>${escapeHTML(when)}</span>
       ${c.seen ? '<span class="badge seen" title="Seen by agent">✓ seen</span>' : ''}
@@ -623,6 +674,14 @@ function renderCommentThread(c) {
   return el;
 }
 
+function prettyCommentAnchor(c) {
+  if (c.file === COMMIT_MSG_FILE) {
+    const sha = (c.head || '').slice(0, 7);
+    return `commit message${sha ? ` (${sha})` : ''} line ${c.line}`;
+  }
+  return `${c.file}:${c.line}`;
+}
+
 function renderCommentSidebar() {
   const ul = $('#comment-list');
   ul.innerHTML = '';
@@ -630,7 +689,7 @@ function renderCommentSidebar() {
   for (const c of state.comments) {
     const li = document.createElement('li');
     li.className = 'comment-row' + (c.resolved ? ' resolved' : '');
-    li.innerHTML = `<div class="where">${escapeHTML(c.file)}:${c.line}</div><div>${escapeHTML(c.text.slice(0, 120))}</div>`;
+    li.innerHTML = `<div class="where">${escapeHTML(prettyCommentAnchor(c))}</div><div>${escapeHTML(c.text.slice(0, 120))}</div>`;
     li.onclick = () => {
       const sel = `tr[data-path="${cssEscape(c.file)}"][data-side="${c.side}"][data-line="${c.line}"]`;
       const row = document.querySelector(sel);
