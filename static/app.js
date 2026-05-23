@@ -567,16 +567,63 @@ function computeWordDiffs(lines, language) {
       const a = lines[i + p].text;
       const b = lines[j + p].text;
       const parts = Diff.diffWordsWithSpace(a, b);
-      out[i + p] = parts.filter(x => !x.added).map(x =>
-        x.removed ? `<span class="word">${escapeHTML(x.value)}</span>` : escapeHTML(x.value)
-      ).join('');
-      out[j + p] = parts.filter(x => !x.removed).map(x =>
-        x.added ? `<span class="word">${escapeHTML(x.value)}</span>` : escapeHTML(x.value)
-      ).join('');
+      const delRanges = [], addRanges = [];
+      let posA = 0, posB = 0;
+      for (const x of parts) {
+        const len = x.value.length;
+        if (x.removed) { delRanges.push([posA, posA + len]); posA += len; }
+        else if (x.added) { addRanges.push([posB, posB + len]); posB += len; }
+        else { posA += len; posB += len; }
+      }
+      out[i + p] = highlightWithWordSpans(a, language, delRanges);
+      out[j + p] = highlightWithWordSpans(b, language, addRanges);
     }
     i = k > i ? k : i + 1;
   }
   return out;
+}
+
+// Syntax-highlight `text` and wrap the given [start, end) character
+// ranges in `<span class="word">…</span>`, splitting through any hljs
+// spans so the syntax color stays intact.
+function highlightWithWordSpans(text, language, ranges) {
+  const html = highlightCode(text, language);
+  if (!ranges.length) return html;
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  let pos = 0;
+  const work = [];
+  const walker = document.createTreeWalker(div, NodeFilter.SHOW_TEXT, null);
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const len = node.nodeValue.length;
+    const nStart = pos, nEnd = pos + len;
+    const hits = [];
+    for (const [rs, re] of ranges) {
+      if (re <= nStart) continue;
+      if (rs >= nEnd) break;
+      hits.push([Math.max(0, rs - nStart), Math.min(len, re - nStart)]);
+    }
+    if (hits.length) work.push({ node, hits });
+    pos = nEnd;
+  }
+  for (const { node, hits } of work) {
+    const t = node.nodeValue;
+    const parent = node.parentNode;
+    const frag = document.createDocumentFragment();
+    let last = 0;
+    for (const [a, b] of hits) {
+      if (a > last) frag.appendChild(document.createTextNode(t.slice(last, a)));
+      const span = document.createElement('span');
+      span.className = 'word';
+      span.textContent = t.slice(a, b);
+      frag.appendChild(span);
+      last = b;
+    }
+    if (last < t.length) frag.appendChild(document.createTextNode(t.slice(last)));
+    parent.replaceChild(frag, node);
+  }
+  return div.innerHTML;
 }
 
 function highlightCode(text, language) {
