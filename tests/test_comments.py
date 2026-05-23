@@ -40,6 +40,24 @@ class TestComments(unittest.TestCase):
             serve.add_comment({
                 "file": "foo.py", "line": 1, "side": "bogus", "text": "x",
             })
+        with self.assertRaises(ValueError):
+            serve.add_comment({"file": "foo.py", "side": "new", "text": "x"})  # no line
+
+    def test_add_file_level(self):
+        entry = serve.add_comment({
+            "file": "foo.py", "side": "file", "text": "delete this whole file",
+        })
+        self.assertIsNone(entry["line"])
+        self.assertEqual(entry["side"], "file")
+        self.assertEqual(entry["text"], "delete this whole file")
+
+    def test_add_commit_message(self):
+        entry = serve.add_comment({
+            "file": ":commit-message", "line": 1, "side": "msg",
+            "text": "typo in subject",
+        })
+        self.assertEqual(entry["side"], "msg")
+        self.assertEqual(entry["line"], 1)
 
     def test_update_text_and_resolve(self):
         a = serve.add_comment({

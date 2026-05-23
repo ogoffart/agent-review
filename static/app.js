@@ -24,6 +24,73 @@ async function api(path, opts) {
   return r.json();
 }
 
+// ---- URL hash <-> state ----------------------------------------------------
+// State that determines what `loadDiff` will fetch is mirrored to
+// location.hash so refresh / back-forward / shareable links work.
+let _hashWriteTimer = null;
+let _suppressHashWrite = false;
+
+function writeHash() {
+  if (_suppressHashWrite) return;
+  const params = new URLSearchParams();
+  if (state.mode !== 'working') params.set('mode', state.mode);
+  if (state.mode === 'commit' && state.commitSha) params.set('sha', state.commitSha);
+  if ((state.mode === 'branch' || state.mode === 'range' || state.mode === 'working')
+      && state.diff?.base && state.diff.base !== 'HEAD') {
+    params.set('base', state.diff.base);
+  }
+  if ((state.mode === 'branch' || state.mode === 'range') && state.diff?.head) {
+    params.set('head', state.diff.head);
+  }
+  if (state.ignoreWs) params.set('ws', '1');
+  const s = params.toString();
+  const next = s ? '#' + s : '';
+  if (window.location.hash !== next) {
+    // Skip the implicit hashchange we're about to cause.
+    _suppressHashWrite = true;
+    if (next) window.location.hash = next;
+    else history.replaceState(null, '', window.location.pathname + window.location.search);
+    setTimeout(() => { _suppressHashWrite = false; }, 0);
+  }
+}
+
+function readHash() {
+  const raw = window.location.hash.replace(/^#/, '');
+  const params = new URLSearchParams(raw);
+  return {
+    mode: params.get('mode') || 'working',
+    sha: params.get('sha'),
+    base: params.get('base'),
+    head: params.get('head'),
+    ws: params.get('ws') === '1',
+  };
+}
+
+async function applyHashState() {
+  const h = readHash();
+  state.ignoreWs = h.ws || (localStorage.getItem('agent-review-ignore-ws') === '1' && !window.location.hash);
+  $('#ignore-ws')?.classList.toggle('active', state.ignoreWs);
+  state.mode = h.mode;
+  state.commitSha = h.sha || null;
+  state.rangeFrom = null;
+  $$('.mode').forEach(b => b.classList.toggle('active',
+    (b.dataset.mode === 'working' && h.mode === 'working')
+    || (b.dataset.mode === 'branch' && h.mode === 'branch')));
+  let url;
+  if (h.mode === 'commit' && h.sha) {
+    url = `/api/diff?mode=commit&sha=${encodeURIComponent(h.sha)}`;
+  } else if (h.mode === 'range' && h.base && h.head) {
+    url = `/api/diff?mode=range&base=${encodeURIComponent(h.base)}&head=${encodeURIComponent(h.head)}`;
+  } else if (h.mode === 'branch') {
+    url = `/api/diff?mode=branch${h.base ? `&base=${encodeURIComponent(h.base)}` : ''}${h.head ? `&head=${encodeURIComponent(h.head)}` : ''}`;
+  } else {
+    url = `/api/diff?mode=working${h.base ? `&base=${encodeURIComponent(h.base)}` : ''}`;
+  }
+  if (state.ignoreWs) url += '&ignore_ws=1';
+  state.diff = await api(url);
+  render();
+}
+
 async function loadInfo() {
   state.info = await api('/api/info');
   state.base = state.info.default_base;
@@ -51,7 +118,21 @@ function repoBasename() {
 function updateHeader() {
   const repo = repoBasename();
   const spec = diffSpec();
-  const text = spec ? `${repo} · ${spec}` : repo;
+  const files = state.diff?.files || [];
+  let rollup = '';
+  if (files.length > 0) {
+    let adds = 0, dels = 0;
+    for (const f of files) {
+      for (const h of f.hunks) {
+        for (const l of h.lines) {
+          if (l.type === 'add') adds++;
+          else if (l.type === 'del') dels++;
+        }
+      }
+    }
+    rollup = ` · +${adds} −${dels} in ${files.length} file${files.length === 1 ? '' : 's'}`;
+  }
+  const text = spec ? `${repo} · ${spec}${rollup}` : repo;
   const info = $('#repo-info');
   info.textContent = text;
   info.title = `${state.info?.repo || ''}\n${spec}`;
@@ -80,9 +161,11 @@ function renderCommits() {
       const from = state.rangeFrom;
       state.rangeFrom = null;
       state.mode = 'working';
+      state.commitSha = null;
       $$('.mode').forEach(b => b.classList.remove('active'));
       state.diff = await api(`/api/diff?mode=working&base=${encodeURIComponent(from)}${state.ignoreWs ? '&ignore_ws=1' : ''}`);
       render();
+      writeHash();
       renderCommits();
       closeSidebarIfMobile();
     };
@@ -124,16 +207,19 @@ function renderCommits() {
     li.onclick = async () => {
       if (state.rangeFrom && state.rangeFrom !== c.sha) {
         state.mode = 'range';
+        state.commitSha = null;
         $$('.mode').forEach(b => b.classList.remove('active'));
         state.diff = await api(
           `/api/diff?mode=range&base=${encodeURIComponent(state.rangeFrom)}&head=${encodeURIComponent(c.sha)}`
         );
       } else {
         state.mode = 'commit';
+        state.commitSha = c.sha;
         $$('.mode').forEach(b => b.classList.remove('active'));
         state.diff = await api(`/api/diff?mode=commit&sha=${encodeURIComponent(c.sha)}`);
       }
       render();
+      writeHash();
       closeSidebarIfMobile();
     };
     ul.appendChild(li);
@@ -242,12 +328,20 @@ function renderFile(file, idx) {
   const name = file.new_path || file.old_path || '?';
   const header = document.createElement('div');
   header.className = 'file-header';
+  header.dataset.path = name;
+  header.dataset.side = 'file';
+  header.dataset.line = '';
   header.innerHTML = `
     <span class="status ${file.status}">${file.status}</span>
     <span class="path">${escapeHTML(name)}</span>
     ${file.old_path && file.new_path && file.old_path !== file.new_path
       ? `<span class="muted">← ${escapeHTML(file.old_path)}</span>` : ''}
+    <button class="file-comment-btn" title="Comment on this file">+ comment</button>
   `;
+  header.querySelector('.file-comment-btn').onclick = (e) => {
+    e.stopPropagation();
+    openFileComment(wrap, header);
+  };
   wrap.appendChild(header);
 
   if (file.binary) {
@@ -497,9 +591,46 @@ function escapeHTML(s) {
 
 // ---------- comments ----------
 
+function openFileComment(wrap, header) {
+  // remove any other open forms
+  $$('.comment-form-row, .file-comment-form').forEach(r => r.remove());
+  const tpl = $('#comment-form-tpl').content.cloneNode(true);
+  const form = document.createElement('div');
+  form.className = 'file-comment-form';
+  form.appendChild(tpl);
+  header.after(form);
+  const ta = form.querySelector('textarea');
+  ta.focus();
+  form.querySelector('.cancel').onclick = () => form.remove();
+  form.querySelector('.submit').onclick = async () => {
+    const text = ta.value.trim();
+    if (!text) return;
+    const payload = {
+      file: header.dataset.path,
+      line: null,
+      side: 'file',
+      text,
+      mode: state.mode,
+      base: state.diff?.base,
+      head: state.diff?.head,
+    };
+    try {
+      await api('/api/comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      form.remove();
+      await loadComments();
+    } catch (e) {
+      alert('Failed to save comment: ' + e.message);
+    }
+  };
+}
+
 function openCommentForm(row) {
   // remove any other open forms
-  $$('.comment-form-row').forEach(r => r.remove());
+  $$('.comment-form-row, .file-comment-form').forEach(r => r.remove());
   const formRow = document.createElement('tr');
   formRow.className = 'comment-row-tr comment-form-row';
   const td = document.createElement('td');
@@ -516,7 +647,7 @@ function openCommentForm(row) {
     if (!text) return;
     const payload = {
       file: row.dataset.path,
-      line: Number(row.dataset.line),
+      line: row.dataset.side === 'file' ? null : Number(row.dataset.line),
       side: row.dataset.side,
       text,
       mode: state.mode,
@@ -542,15 +673,27 @@ function openCommentForm(row) {
 }
 
 function renderInlineComments() {
-  $$('.comment-thread-row').forEach(r => r.remove());
+  $$('.comment-thread-row, .file-thread-block').forEach(r => r.remove());
   const grouped = new Map();
   for (const c of state.comments) {
-    const key = `${c.file}|${c.side}|${c.line}`;
+    const key = `${c.file}|${c.side}|${c.line ?? ''}`;
     if (!grouped.has(key)) grouped.set(key, []);
     grouped.get(key).push(c);
   }
   for (const [key, list] of grouped) {
-    const [file, side, line] = key.split('|');
+    const [file, side] = key.split('|');
+    if (side === 'file') {
+      // Attach a block-level thread under each matching file-header.
+      const headers = $$(`.file-header[data-path="${cssEscape(file)}"]`);
+      for (const header of headers) {
+        const block = document.createElement('div');
+        block.className = 'file-thread-block';
+        for (const c of list) block.appendChild(renderCommentThread(c));
+        header.after(block);
+      }
+      continue;
+    }
+    const line = key.split('|')[2];
     const sel = `tr[data-path="${cssEscape(file)}"][data-side="${side}"][data-line="${line}"]`;
     const rows = $$(sel);
     for (const row of rows) {
@@ -675,6 +818,9 @@ function renderCommentThread(c) {
 }
 
 function prettyCommentAnchor(c) {
+  if (c.side === 'file' || c.line == null) {
+    return `${c.file} (file-level)`;
+  }
   if (c.file === COMMIT_MSG_FILE) {
     const sha = (c.head || '').slice(0, 7);
     return `commit message${sha ? ` (${sha})` : ''} line ${c.line}`;
@@ -691,7 +837,9 @@ function renderCommentSidebar() {
     li.className = 'comment-row' + (c.resolved ? ' resolved' : '');
     li.innerHTML = `<div class="where">${escapeHTML(prettyCommentAnchor(c))}</div><div>${escapeHTML(c.text.slice(0, 120))}</div>`;
     li.onclick = () => {
-      const sel = `tr[data-path="${cssEscape(c.file)}"][data-side="${c.side}"][data-line="${c.line}"]`;
+      const sel = c.side === 'file'
+        ? `.file-header[data-path="${cssEscape(c.file)}"]`
+        : `tr[data-path="${cssEscape(c.file)}"][data-side="${c.side}"][data-line="${c.line}"]`;
       const row = document.querySelector(sel);
       if (row) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
     };
@@ -706,12 +854,14 @@ function cssEscape(s) {
 
 // ---------- wiring ----------
 
-function setMode(mode) {
+async function setMode(mode) {
   state.mode = mode;
   state.head = null;       // clicking the mode buttons resets to the current branch
+  state.commitSha = null;
   state.rangeFrom = null;  // and clears any pending range comparison
   $$('.mode').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
-  loadDiff();
+  await loadDiff();
+  writeHash();
   renderCommits();
 }
 
@@ -774,7 +924,11 @@ window.addEventListener('DOMContentLoaded', async () => {
   applyZoom(loadZoom());
   $('#zoom-out').onclick = () => nudgeZoom(-1);
   $('#zoom-in').onclick = () => nudgeZoom(+1);
-  state.ignoreWs = localStorage.getItem('agent-review-ignore-ws') === '1';
+  // Seed ignoreWs from URL if present, otherwise localStorage. URL wins.
+  const h0 = readHash();
+  state.ignoreWs = window.location.hash
+    ? !!h0.ws
+    : localStorage.getItem('agent-review-ignore-ws') === '1';
   const wsBtn = $('#ignore-ws');
   wsBtn.classList.toggle('active', state.ignoreWs);
   wsBtn.onclick = async () => {
@@ -782,6 +936,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     localStorage.setItem('agent-review-ignore-ws', state.ignoreWs ? '1' : '0');
     wsBtn.classList.toggle('active', state.ignoreWs);
     await loadDiff();
+    writeHash();
   };
   $$('.mode').forEach(b => b.onclick = () => setMode(b.dataset.mode));
   $('#refresh').onclick = async () => {
@@ -794,7 +949,17 @@ window.addEventListener('DOMContentLoaded', async () => {
   $('#sidebar').addEventListener('click', (e) => {
     if (e.target.closest('li')) closeSidebarIfMobile();
   });
+  window.addEventListener('hashchange', () => {
+    if (_suppressHashWrite) return;
+    applyHashState().then(() => { loadComments(); loadCommits(); });
+  });
 
   await loadInfo();
-  await Promise.all([loadDiff(), loadComments(), loadCommits(), loadBranches()]);
+  if (window.location.hash) {
+    await applyHashState();
+    await Promise.all([loadComments(), loadCommits()]);
+  } else {
+    await Promise.all([loadDiff(), loadComments(), loadCommits()]);
+    writeHash();
+  }
 });

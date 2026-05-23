@@ -310,18 +310,26 @@ def save_comments(data: dict) -> None:
 
 
 def add_comment(payload: dict) -> dict:
-    required = {"file", "line", "side", "text"}
+    required = {"file", "side", "text"}
     missing = required - set(payload)
     if missing:
         raise ValueError(f"missing fields: {sorted(missing)}")
-    if payload["side"] not in ("old", "new"):
-        raise ValueError("side must be old or new")
+    if payload["side"] not in ("old", "new", "msg", "file"):
+        raise ValueError("side must be old, new, msg, or file")
+    line = payload.get("line")
+    # 'file'-level comments aren't anchored to a line; everything else is.
+    if payload["side"] == "file":
+        line = None
+    else:
+        if line is None:
+            raise ValueError("line is required for line-anchored comments")
+        line = int(line)
     with COMMENTS_LOCK:
         data = load_comments() if not COMMENTS_PATH.exists() else json.loads(COMMENTS_PATH.read_text() or '{"comments":[]}')
     entry = {
         "id": uuid.uuid4().hex[:12],
         "file": payload["file"],
-        "line": int(payload["line"]),
+        "line": line,
         "side": payload["side"],
         "text": payload["text"],
         "mode": payload.get("mode"),
