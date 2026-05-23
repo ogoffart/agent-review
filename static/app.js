@@ -235,23 +235,20 @@ function renderFile(file, idx) {
   for (let h = 0; h < file.hunks.length; h++) {
     const hunk = file.hunks[h];
 
+    let gap = null;
     if (canExpand) {
       const gapNewStart = prevNewEnd + 1;
       const gapNewEnd = hunk.new_start - 1;
       const gapOldStart = prevOldEnd + 1;
       const gapOldEnd = hunk.old_start - 1;
       if (gapNewEnd >= gapNewStart) {
-        tbody.appendChild(makeExpandRow(file, {
+        gap = {
           oldStart: gapOldStart, oldEnd: gapOldEnd,
           newStart: gapNewStart, newEnd: gapNewEnd,
-        }));
+        };
       }
     }
-
-    const tr = document.createElement('tr');
-    tr.className = 'hunk';
-    tr.innerHTML = `<td colspan="2">@@ -${hunk.old_start},${hunk.old_lines} +${hunk.new_start},${hunk.new_lines} @@${escapeHTML(hunk.header || '')}</td>`;
-    tbody.appendChild(tr);
+    tbody.appendChild(makeHunkRow(file, hunk, gap));
 
     const lines = hunk.lines;
     const wordHTML = computeWordDiffs(lines, file.language);
@@ -261,6 +258,9 @@ function renderFile(file, idx) {
 
     prevNewEnd = hunk.new_start + hunk.new_lines - 1;
     prevOldEnd = hunk.old_start + hunk.old_lines - 1;
+  }
+  if (canExpand && file.hunks.length > 0) {
+    tbody.appendChild(makeTrailingExpandRow(file, prevNewEnd, prevOldEnd));
   }
   wrap.appendChild(table);
   return wrap;
@@ -292,13 +292,48 @@ function createLineRow(line, file, wordHTMLOverride) {
   return row;
 }
 
-function makeExpandRow(file, gap) {
+function makeHunkRow(file, hunk, gap) {
+  const tr = document.createElement('tr');
+  tr.className = 'hunk';
+  const text = `@@ -${hunk.old_start},${hunk.old_lines} +${hunk.new_start},${hunk.new_lines} @@${escapeHTML(hunk.header || '')}`;
+  if (gap) {
+    const count = gap.newEnd - gap.newStart + 1;
+    tr.innerHTML = `<td colspan="2"><div class="hunk-line"><button class="expand-btn">↕ Show ${count} more line${count === 1 ? '' : 's'}</button><span class="hunk-text">${text}</span></div></td>`;
+    tr.querySelector('.expand-btn').onclick = () => expandGap(file, gap, tr);
+  } else {
+    tr.innerHTML = `<td colspan="2"><div class="hunk-line"><span class="hunk-text">${text}</span></div></td>`;
+  }
+  return tr;
+}
+
+function makeTrailingExpandRow(file, lastNewLine, lastOldLine) {
   const row = document.createElement('tr');
-  row.className = 'expand';
-  const count = gap.newEnd - gap.newStart + 1;
-  row.innerHTML = `<td colspan="2"><button class="expand-btn">↕ Show ${count} more line${count === 1 ? '' : 's'}</button></td>`;
-  row.querySelector('.expand-btn').onclick = async () => {
-    await expandGap(file, gap, row);
+  row.className = 'expand trailing';
+  row.innerHTML = `<td colspan="2"><button class="expand-btn">↓ Show remaining lines</button></td>`;
+  const btn = row.querySelector('.expand-btn');
+  btn.onclick = async () => {
+    const ref = contextRef();
+    const path = file.new_path || file.old_path;
+    if (!path) return;
+    let blob;
+    try {
+      blob = await fetchBlobLines(ref, path);
+    } catch (e) {
+      btn.textContent = `error: ${e.message}`;
+      return;
+    }
+    const startN = lastNewLine + 1;
+    const startO = lastOldLine + 1;
+    if (startN > blob.length) { row.remove(); return; }
+    const fragment = document.createDocumentFragment();
+    for (let n = startN, o = startO; n <= blob.length; n++, o++) {
+      fragment.appendChild(createLineRow({
+        type: 'ctx', old: o, new: n, text: blob[n - 1] ?? '',
+      }, file));
+    }
+    row.parentNode.insertBefore(fragment, row);
+    row.remove();
+    renderInlineComments();
   };
   return row;
 }
@@ -331,9 +366,6 @@ async function expandGap(file, gap, rowEl) {
     rowEl.querySelector('.expand-btn').textContent = `error: ${e.message}`;
     return;
   }
-  // Remember the next hunk header; we'll hide it once the gap is filled in,
-  // since the lines now flow contiguously and the @@ divider is redundant.
-  const nextHunk = rowEl.nextElementSibling;
   const fragment = document.createDocumentFragment();
   for (let n = gap.newStart, o = gap.oldStart; n <= gap.newEnd; n++, o++) {
     const text = blob[n - 1] ?? '';
@@ -342,9 +374,6 @@ async function expandGap(file, gap, rowEl) {
     }, file));
   }
   rowEl.replaceWith(fragment);
-  if (nextHunk && nextHunk.classList.contains('hunk')) {
-    nextHunk.style.display = 'none';
-  }
   renderInlineComments();   // re-anchor any comments hidden in the gap
 }
 
