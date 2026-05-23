@@ -34,10 +34,11 @@ Do **not** use for:
 
 ## How to launch
 
-The server script `serve.py` lives in this skill's own directory
-(next to this `SKILL.md`). The install path is not fixed — it could
-be anywhere, including a symlink. Discover it from inside the agent
-session and reuse the resolved path; do **not** hard-code a path.
+The server script `serve.py` lives in the skill's root directory,
+next to this `SKILL.md`. The install path is not fixed — it could
+be `~/.claude/skills/agent-review/`, `/opt/agent-review/`, or a
+symlink to either. Discover it from inside the agent session and
+reuse the resolved path; do **not** hard-code a path.
 
 ```sh
 # Find this skill's directory by locating SKILL.md in known skill roots.

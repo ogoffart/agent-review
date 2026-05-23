@@ -11,7 +11,7 @@ build step, no dependencies beyond the standard library.
 ## Quick start
 
 ```sh
-python3 agent-review/serve.py --repo /path/to/your/repo --port 8765
+python3 serve.py --repo /path/to/your/repo --port 8765
 ```
 
 Then open `http://127.0.0.1:8765/`. Pass `--host 0.0.0.0` to expose on
@@ -79,14 +79,14 @@ diff font; the choice is remembered in `localStorage`.
 ## Layout
 
 ```
-agent-review/
-  serve.py            # HTTP server, diff parser, comment CRUD
-  static/
-    index.html
-    app.js            # client; uses highlight.js + jsdiff via CDN
-    style.css
+serve.py              # HTTP server, diff parser, comment CRUD
+SKILL.md              # skill entry-point for Claude Code
+notify-hook.sh        # UserPromptSubmit hook for unseen-comment notifications
+static/
+  index.html
+  app.js              # client; uses highlight.js + jsdiff via CDN
+  style.css
 tests/                # python unittest, run with: python3 -m unittest discover tests
-samples/              # toy programs used as diff content
 ```
 
 ## Tests
