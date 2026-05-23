@@ -161,10 +161,14 @@ def parse_unified_diff(text: str) -> list[dict]:
     return files
 
 
+CONTEXT_LINES = 6
+
+
 def get_diff(mode: str, base: str | None = None, sha: str | None = None,
              head: str | None = None) -> dict:
+    u = f"-U{CONTEXT_LINES}"
     if mode == "working":
-        diff_text = git("diff", "--no-color", "HEAD")
+        diff_text = git("diff", "--no-color", u, "HEAD")
         # Include untracked files so they show up in the sidebar too.
         # `git diff --no-index` exits 1 when files differ — expected here.
         untracked = git(
@@ -174,7 +178,7 @@ def get_diff(mode: str, base: str | None = None, sha: str | None = None,
             if not path:
                 continue
             diff_text += git(
-                "diff", "--no-color", "--no-index", "--",
+                "diff", "--no-color", u, "--no-index", "--",
                 "/dev/null", path, check=False,
             )
         return {
@@ -190,10 +194,10 @@ def get_diff(mode: str, base: str | None = None, sha: str | None = None,
         # the two commit tips directly (no working-tree mixing). Otherwise
         # fall back to `git diff base` which includes staged + unstaged.
         if head and head != cur:
-            diff_text = git("diff", "--no-color", b, head)
+            diff_text = git("diff", "--no-color", u, b, head)
             head_label = head
         else:
-            diff_text = git("diff", "--no-color", b)
+            diff_text = git("diff", "--no-color", u, b)
             head_label = cur
         return {
             "mode": "branch",
@@ -204,7 +208,7 @@ def get_diff(mode: str, base: str | None = None, sha: str | None = None,
     if mode == "commit":
         if not sha:
             raise ValueError("commit mode requires sha")
-        diff_text = git("show", "--no-color", "--pretty=format:", sha)
+        diff_text = git("show", "--no-color", u, "--pretty=format:", sha)
         return {
             "mode": "commit",
             "base": f"{sha}^",
@@ -216,7 +220,7 @@ def get_diff(mode: str, base: str | None = None, sha: str | None = None,
         t = head
         if not (f and t):
             raise ValueError("range mode requires both 'from' (base) and 'to' (head)")
-        diff_text = git("diff", "--no-color", f, t)
+        diff_text = git("diff", "--no-color", u, f, t)
         return {
             "mode": "range",
             "base": f,
