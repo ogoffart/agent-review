@@ -165,6 +165,13 @@ def parse_unified_diff(text: str) -> list[dict]:
 CONTEXT_LINES = 6
 
 
+def _reject_flaglike(value: str, name: str) -> None:
+    """Refuse user-supplied refs/paths that could be confused with a git
+    flag. Combined with `--end-of-options` this is belt-and-braces."""
+    if value.startswith("-"):
+        raise ValueError(f"{name} must not start with '-'")
+
+
 def get_diff(mode: str, base: str | None = None, sha: str | None = None,
              head: str | None = None, ignore_ws: bool = False) -> dict:
     opts: list[str] = ["--no-color", f"-U{CONTEXT_LINES}"]
@@ -172,7 +179,8 @@ def get_diff(mode: str, base: str | None = None, sha: str | None = None,
         opts.append("-w")  # --ignore-all-space
     if mode == "working":
         base_ref = base or "HEAD"
-        diff_text = git("diff", *opts, base_ref)
+        _reject_flaglike(base_ref, "base")
+        diff_text = git("diff", *opts, "--end-of-options", base_ref)
         # Include untracked files so they show up in the sidebar too.
         # `git diff --no-index` exits 1 when files differ — expected here.
         untracked = git(
@@ -193,12 +201,14 @@ def get_diff(mode: str, base: str | None = None, sha: str | None = None,
         }
     if mode == "branch":
         b = base or detect_default_base()
+        _reject_flaglike(b, "base")
         cur = current_branch()
         if head and head != cur:
-            diff_text = git("diff", *opts, b, head)
+            _reject_flaglike(head, "head")
+            diff_text = git("diff", *opts, "--end-of-options", b, head)
             head_label = head
         else:
-            diff_text = git("diff", *opts, b)
+            diff_text = git("diff", *opts, "--end-of-options", b)
             head_label = cur
         return {
             "mode": "branch",
@@ -209,10 +219,11 @@ def get_diff(mode: str, base: str | None = None, sha: str | None = None,
     if mode == "commit":
         if not sha:
             raise ValueError("commit mode requires sha")
-        diff_text = git("show", *opts, "--pretty=format:", sha)
+        _reject_flaglike(sha, "sha")
+        diff_text = git("show", *opts, "--pretty=format:", "--end-of-options", sha)
         sep = "\x1f"
         fmt = sep.join(["%H", "%h", "%s", "%b", "%an", "%ae", "%aI"])
-        meta_raw = git("log", "-1", f"--format={fmt}", sha).rstrip("\n")
+        meta_raw = git("log", "-1", f"--format={fmt}", "--end-of-options", sha).rstrip("\n")
         parts = meta_raw.split(sep)
         commit_meta = {
             "sha":     parts[0] if len(parts) > 0 else sha,
@@ -235,7 +246,9 @@ def get_diff(mode: str, base: str | None = None, sha: str | None = None,
         t = head
         if not (f and t):
             raise ValueError("range mode requires both 'from' (base) and 'to' (head)")
-        diff_text = git("diff", *opts, f, t)
+        _reject_flaglike(f, "base")
+        _reject_flaglike(t, "head")
+        diff_text = git("diff", *opts, "--end-of-options", f, t)
         return {
             "mode": "range",
             "base": f,
@@ -309,6 +322,17 @@ def save_comments(data: dict) -> None:
         tmp.replace(COMMENTS_PATH)
 
 
+MAX_TEXT = 32 * 1024  # 32 KB per comment / reply
+
+
+def _check_text(text: str, field: str = "text") -> str:
+    if not isinstance(text, str):
+        raise ValueError(f"{field} must be a string")
+    if len(text) > MAX_TEXT:
+        raise ValueError(f"{field} too long ({len(text)} chars; max {MAX_TEXT})")
+    return text
+
+
 def add_comment(payload: dict) -> dict:
     required = {"file", "side", "text"}
     missing = required - set(payload)
@@ -316,6 +340,7 @@ def add_comment(payload: dict) -> dict:
         raise ValueError(f"missing fields: {sorted(missing)}")
     if payload["side"] not in ("old", "new", "msg", "file"):
         raise ValueError("side must be old, new, msg, or file")
+    _check_text(payload["text"])
     line = payload.get("line")
     # 'file'-level comments aren't anchored to a line; everything else is.
     if payload["side"] == "file":
@@ -346,6 +371,8 @@ def add_comment(payload: dict) -> dict:
 
 
 def update_comment(cid: str, payload: dict) -> dict | None:
+    if "text" in payload:
+        _check_text(payload["text"])
     data = load_comments()
     for c in data.get("comments", []):
         if c["id"] == cid:
@@ -362,6 +389,7 @@ def add_reply(cid: str, payload: dict) -> dict | None:
     text = (payload.get("text") or "").strip()
     if not text:
         raise ValueError("reply text is required")
+    _check_text(text, "reply text")
     data = load_comments()
     for c in data.get("comments", []):
         if c["id"] == cid:
@@ -421,8 +449,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    MAX_BODY = 256 * 1024  # 256 KB is more than enough for a comment
+
     def _read_json(self) -> dict:
         length = int(self.headers.get("Content-Length", 0))
+        if length > self.MAX_BODY:
+            raise ValueError(f"body too large ({length} bytes; max {self.MAX_BODY})")
         if not length:
             return {}
         raw = self.rfile.read(length)
@@ -430,6 +462,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return json.loads(raw)
         except json.JSONDecodeError:
             raise ValueError("invalid json body")
+
+    def _check_csrf(self) -> bool:
+        """Require an X-Agent-Review-Token header on state-changing requests.
+        Browsers won't add custom headers cross-origin without a CORS
+        pre-flight, so this blocks form-style CSRF from another origin
+        even if the URL token leaks. Disabled when the URL token is off."""
+        if not TOKEN:
+            return True
+        import secrets
+        sent = self.headers.get("X-Agent-Review-Token", "")
+        if not secrets.compare_digest(sent, TOKEN):
+            self._json(403, {"error": "csrf check failed"})
+            return False
+        return True
 
     def _strip_token(self, raw_path: str) -> str | None:
         """Return the path with the token prefix stripped, or None when the
@@ -439,25 +485,33 @@ class Handler(http.server.BaseHTTPRequestHandler):
         '/<token>' (no trailing slash) so relative static URLs resolve."""
         if not TOKEN:
             return raw_path
+        import secrets
         url = urllib.parse.urlparse(raw_path)
         prefix = f"/{TOKEN}"
-        if url.path == prefix:
+        # `startswith` short-circuits and would leak per-char timing in
+        # theory. Use constant-time compare on a fixed-length window.
+        candidate = url.path[:len(prefix) + 1]
+        if secrets.compare_digest(candidate, prefix + "/"):
+            new_path = url.path[len(prefix):] or "/"
+            return new_path + (("?" + url.query) if url.query else "")
+        if secrets.compare_digest(url.path, prefix):
             self.send_response(301)
             self.send_header("Location", prefix + "/" + (("?" + url.query) if url.query else ""))
             self.end_headers()
             return None
-        if not url.path.startswith(prefix + "/"):
-            self._json(404, {"error": "not found"})
-            return None
-        # Rebuild the path without the token prefix.
-        new_path = url.path[len(prefix):] or "/"
-        return new_path + (("?" + url.query) if url.query else "")
+        self._json(404, {"error": "not found"})
+        return None
 
     def _serve_static(self, rel: str) -> None:
         if not rel or rel == "/":
             rel = "index.html"
         path = (STATIC_DIR / rel).resolve()
-        if not str(path).startswith(str(STATIC_DIR.resolve())) or not path.is_file():
+        try:
+            path.relative_to(STATIC_DIR.resolve())
+        except ValueError:
+            self._json(404, {"error": "not found"})
+            return
+        if not path.is_file():
             self._json(404, {"error": "not found"})
             return
         ext = path.suffix.lower()
@@ -494,7 +548,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if url.path == "/api/commits":
                 limit = int(q.get("limit", ["20"])[0])
                 base = detect_default_base()
-                bp = git("merge-base", "HEAD", base, check=False).strip()
+                bp = git("merge-base", "--end-of-options", "HEAD", base, check=False).strip()
                 self._json(200, {
                     "commits": get_commits(limit),
                     "branch_point": bp or None,
@@ -519,7 +573,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if not path:
                     self._json(400, {"error": "path required"})
                     return
-                out = git("show", f"{ref}:{path}", check=False)
+                _reject_flaglike(ref, "ref")
+                _reject_flaglike(path, "path")
+                out = git("show", "--end-of-options", f"{ref}:{path}", check=False)
                 self._json(200, {"lines": out.splitlines()})
                 return
             if url.path == "/api/comments":
@@ -536,6 +592,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         try:
             stripped = self._strip_token(self.path)
             if stripped is None:
+                return
+            if not self._check_csrf():
                 return
             url = urllib.parse.urlparse(stripped)
             if url.path == "/api/comments":
@@ -564,6 +622,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             stripped = self._strip_token(self.path)
             if stripped is None:
                 return
+            if not self._check_csrf():
+                return
             url = urllib.parse.urlparse(stripped)
             if url.path.startswith("/api/comments/"):
                 cid = url.path[len("/api/comments/"):]
@@ -584,6 +644,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         try:
             stripped = self._strip_token(self.path)
             if stripped is None:
+                return
+            if not self._check_csrf():
                 return
             url = urllib.parse.urlparse(stripped)
             if url.path.startswith("/api/comments/"):

@@ -18,7 +18,16 @@ const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 // The page may be mounted under a /<token>/ prefix; derive the API base
 // from window.location so calls work without any hard-coded prefix.
 const BASE = window.location.pathname.replace(/\/index\.html$/, '').replace(/\/$/, '');
+// The URL token is the segment between the page root and the static
+// path. Echo it back in a custom header on state-changing requests so
+// a malicious page can't CSRF-submit comments even if it learns the URL.
+const URL_TOKEN = (BASE.match(/\/([0-9a-f]{6,})$/i) || [, ''])[1];
 async function api(path, opts) {
+  opts = opts || {};
+  const method = (opts.method || 'GET').toUpperCase();
+  if (URL_TOKEN && method !== 'GET' && method !== 'HEAD') {
+    opts.headers = { ...(opts.headers || {}), 'X-Agent-Review-Token': URL_TOKEN };
+  }
   const r = await fetch(BASE + path, opts);
   if (!r.ok) throw new Error(`${path}: ${r.status}`);
   return r.json();

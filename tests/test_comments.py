@@ -59,6 +59,23 @@ class TestComments(unittest.TestCase):
         self.assertEqual(entry["side"], "msg")
         self.assertEqual(entry["line"], 1)
 
+    def test_text_size_cap(self):
+        too_big = "x" * (serve.MAX_TEXT + 1)
+        with self.assertRaises(ValueError):
+            serve.add_comment({"file": "foo.py", "line": 1, "side": "new", "text": too_big})
+        a = serve.add_comment({"file": "foo.py", "line": 1, "side": "new", "text": "ok"})
+        with self.assertRaises(ValueError):
+            serve.update_comment(a["id"], {"text": too_big})
+        with self.assertRaises(ValueError):
+            serve.add_reply(a["id"], {"text": too_big})
+
+    def test_reject_flaglike(self):
+        with self.assertRaises(ValueError):
+            serve._reject_flaglike("--upload-pack=x", "ref")
+        # benign values pass
+        serve._reject_flaglike("HEAD", "ref")
+        serve._reject_flaglike("main", "ref")
+
     def test_update_text_and_resolve(self):
         a = serve.add_comment({
             "file": "foo.py", "line": 1, "side": "new", "text": "first",
