@@ -779,7 +779,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Local web UI for reviewing agent diffs.")
     ap.add_argument("--repo", default=os.environ.get("AGENT_REVIEW_REPO", os.getcwd()),
                     help="git repo to review (default: cwd)")
-    ap.add_argument("--port", type=int, default=int(os.environ.get("AGENT_REVIEW_PORT", "8765")))
+    ap.add_argument("--port", type=int, default=int(os.environ.get("AGENT_REVIEW_PORT", "0")),
+                    help="port to listen on (default: 0 — OS picks a free one)")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--comments", default=None,
                     help="comments JSON file (default: {repo}/.agent-review-comments.json)")
@@ -826,7 +827,9 @@ def main() -> int:
             display_host = socket.gethostbyname(socket.gethostname())
         except Exception:
             pass
-    url = f"{scheme}://{display_host}:{args.port}{path_part}"
+    # With --port 0 the kernel picks a free port; report what we actually got.
+    bound_port = srv.server_address[1]
+    url = f"{scheme}://{display_host}:{bound_port}{path_part}"
     print(f"agent-review serving {REPO}")
     print(f"  comments: {COMMENTS_PATH}")
     print(f"  token:    {TOKEN or '(disabled)'}")

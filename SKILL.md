@@ -29,8 +29,12 @@ Do **not** use for:
 
 - Pure CLI inspection (`git diff`, `git log` are enough).
 - Posting comments to GitHub PRs (use `gh pr comment`).
-- Anything requiring auth — this server has none, only bind to
-  `0.0.0.0` on trusted networks.
+
+The server gates every URL on a random token prefix and requires a
+matching `X-Agent-Review-Token` header on writes — fine for LAN/phone
+access on trusted networks. `--https` adds TLS via a cached self-signed
+certificate (`~/.cache/agent-review/`); browsers warn once per device.
+Don't expose to the open internet without an additional auth layer.
 
 ## How to launch
 
@@ -50,10 +54,7 @@ SKILL_DIR=$(find "$HOME" /opt /usr/local /usr/share \
 # Fallback: ask the user where it's installed if discovery fails.
 [ -z "$SKILL_DIR" ] && { echo "Could not locate agent-review skill"; exit 1; }
 
-python3 "$SKILL_DIR/serve.py" \
-    --repo "$(pwd)" \
-    --port 8765 \
-    --host 0.0.0.0
+python3 "$SKILL_DIR/serve.py" --repo "$(pwd)" --host 0.0.0.0
 ```
 
 Use the harness's background-task facility (`run_in_background: true`)
@@ -74,10 +75,12 @@ the URL must be passed to the user verbatim.
 Flags:
 
 - `--repo PATH` — git repo to review (defaults to cwd at launch).
-- `--port N` — defaults to 8765. Pick another if it conflicts.
+- `--port N` — defaults to `0`, which lets the OS pick a free port.
+  Pin a specific port (e.g. `--port 8765`) if the user wants a stable URL.
 - `--host 127.0.0.1` (default) for local-only; `0.0.0.0` for LAN.
 - `--comments PATH` — override comments JSON location (defaults to
   `<repo>/.agent-review-comments.json`).
+- `--token T` — pin the URL-prefix token; defaults to a fresh random hex.
 - `--https` — serve over HTTPS using a self-signed cert cached at
   `~/.cache/agent-review/`. Browsers warn once per device, then
   proceed. Requires the `openssl` CLI.
@@ -92,10 +95,11 @@ entries as actionable feedback:
 cat <repo>/.agent-review-comments.json
 ```
 
-Or fetch just the unseen ones from the server:
+Or fetch just the unseen ones from the server (replace `<base>` with
+the URL the server printed at startup — host, port, and token segment):
 
 ```sh
-curl -s 'http://127.0.0.1:8765/api/comments?unseen=1'
+curl -s "<base>/api/comments?unseen=1"
 ```
 
 Entry shape:
@@ -119,19 +123,24 @@ Entry shape:
 
 ## How to acknowledge feedback
 
-After acting on a comment, reply to it (which also marks it seen):
+After acting on a comment, reply to it (which also marks it seen).
+State-changing requests must carry the URL token in an
+`X-Agent-Review-Token` header — extract it from `<base>` (it's the last
+path segment) or store it when you launch the server:
 
 ```sh
-curl -s -X POST "http://127.0.0.1:8765/api/comments/<id>/replies" \
+curl -s -X POST "<base>/api/comments/<id>/replies" \
     -H 'Content-Type: application/json' \
+    -H "X-Agent-Review-Token: <token>" \
     -d '{"text":"fixed in <sha>","by":"agent"}'
 ```
 
 Or just mark it seen without replying:
 
 ```sh
-curl -s -X PATCH "http://127.0.0.1:8765/api/comments/<id>" \
+curl -s -X PATCH "<base>/api/comments/<id>" \
     -H 'Content-Type: application/json' \
+    -H "X-Agent-Review-Token: <token>" \
     -d '{"seen":true}'
 ```
 
