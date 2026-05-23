@@ -327,10 +327,9 @@ function makeMessageRow(text, lineNum, isSubject, sha) {
   row.dataset.path = COMMIT_MSG_FILE;
   row.dataset.head = sha || '';
   row.innerHTML = `
-    <td class="gutter" title="Add comment">+</td>
-    <td class="content">${escapeHTML(text)}</td>
+    <td class="content"><span class="sym" title="Add comment">  </span>${escapeHTML(text)}</td>
   `;
-  row.querySelector('.gutter').onclick = (e) => {
+  row.querySelector('.sym').onclick = (e) => {
     e.stopPropagation();
     openCommentForm(row);
   };
@@ -451,10 +450,9 @@ function createLineRow(line, file, wordHTMLOverride) {
   const sym = line.type === 'add' ? '+' : line.type === 'del' ? '−' : ' ';
   const tdClass = 'content' + (tailUnchanged ? ' tail-light' : '');
   row.innerHTML = `
-    <td class="gutter" title="Add comment">+</td>
-    <td class="${tdClass}"><span class="line"><span class="sym">${sym} </span>${contentHTML}</span></td>
+    <td class="${tdClass}"><span class="line"><span class="sym" title="Add comment">${sym} </span>${contentHTML}</span></td>
   `;
-  row.querySelector('.gutter').onclick = (e) => {
+  row.querySelector('.sym').onclick = (e) => {
     e.stopPropagation();
     openCommentForm(row);
   };
@@ -467,10 +465,10 @@ function makeHunkRow(file, hunk, gap) {
   const text = `@@ -${hunk.old_start},${hunk.old_lines} +${hunk.new_start},${hunk.new_lines} @@${escapeHTML(hunk.header || '')}`;
   if (gap) {
     const count = gap.newEnd - gap.newStart + 1;
-    tr.innerHTML = `<td colspan="2"><div class="hunk-line"><button class="expand-btn">↕ Show ${count} more line${count === 1 ? '' : 's'}</button><span class="hunk-text">${text}</span></div></td>`;
+    tr.innerHTML = `<td><div class="hunk-line"><button class="expand-btn">↕ Show ${count} more line${count === 1 ? '' : 's'}</button><span class="hunk-text">${text}</span></div></td>`;
     tr.querySelector('.expand-btn').onclick = () => expandGap(file, gap, tr);
   } else {
-    tr.innerHTML = `<td colspan="2"><div class="hunk-line"><span class="hunk-text">${text}</span></div></td>`;
+    tr.innerHTML = `<td><div class="hunk-line"><span class="hunk-text">${text}</span></div></td>`;
   }
   return tr;
 }
@@ -478,7 +476,7 @@ function makeHunkRow(file, hunk, gap) {
 function makeTrailingExpandRow(file, lastNewLine, lastOldLine) {
   const row = document.createElement('tr');
   row.className = 'expand trailing';
-  row.innerHTML = `<td colspan="2"><button class="expand-btn">↓ Show remaining lines</button></td>`;
+  row.innerHTML = `<td><button class="expand-btn">↓ Show remaining lines</button></td>`;
   const btn = row.querySelector('.expand-btn');
   btn.onclick = async () => {
     const ref = contextRef();
@@ -758,7 +756,6 @@ function openCommentForm(row) {
   const formRow = document.createElement('tr');
   formRow.className = 'comment-row-tr comment-form-row';
   const td = document.createElement('td');
-  td.colSpan = 2;
   const tpl = $('#comment-form-tpl').content.cloneNode(true);
   td.appendChild(tpl);
   formRow.appendChild(td);
@@ -847,7 +844,6 @@ function renderInlineComments() {
       const tr = document.createElement('tr');
       tr.className = 'comment-row-tr comment-thread-row';
       const td = document.createElement('td');
-      td.colSpan = 2;
       for (const c of list) td.appendChild(renderCommentThread(c, { moved, originalLine: line }));
       tr.appendChild(td);
       row.after(tr);

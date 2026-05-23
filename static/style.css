@@ -328,36 +328,27 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
   vertical-align: top;
   white-space: pre;
 }
-.diff-table td.gutter {
-  width: 1%;
-  min-width: 18px;
-  text-align: center;
-  user-select: none;
-  cursor: pointer;
-  color: transparent;
-  background: var(--border-soft);
-  border-right: 1px solid var(--border);
-}
-.diff-table tr:hover td.gutter { color: var(--accent); }
 .diff-table td.content { width: 100%; }
 .diff-table tr.add td.content { background: var(--add-line); }
-.diff-table tr.add td.gutter { background: var(--add-line); }
 .diff-table tr.del td.content { background: var(--del-line); }
-.diff-table tr.del td.gutter { background: var(--del-line); }
 .diff-table tr.add.moved td.content { background: var(--add-line-moved); }
-.diff-table tr.add.moved td.gutter { background: var(--add-line-moved); }
 .diff-table tr.del.moved td.content { background: var(--del-line-moved); }
-.diff-table tr.del.moved td.gutter { background: var(--del-line-moved); }
+/* The first character (+/-/space) is the click target for 'add comment'. */
+.diff-table td.content .sym {
+  cursor: pointer;
+  user-select: none;
+}
+.diff-table tr:hover td.content .sym {
+  background: rgba(9, 105, 218, 0.18);   /* accent at low alpha */
+  border-radius: 2px;
+}
 /* tail-light: line ends with an unchanged segment — fill the area to
  * the right of the actual text with the lighter "unchanged" tint. */
 .diff-table tr.add td.content.tail-light { background: var(--add-bg); }
 .diff-table tr.add td.content.tail-light .line { background: var(--add-line); }
 .diff-table tr.del td.content.tail-light { background: var(--del-bg); }
 .diff-table tr.del td.content.tail-light .line { background: var(--del-line); }
-.diff-table td.content .sym {
-  color: var(--muted);
-  user-select: none;
-}
+.diff-table td.content .sym { color: var(--muted); }
 .diff-table tr.hunk td {
   background: var(--hunk-bg);
   color: var(--hunk-fg);
@@ -578,11 +569,8 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
   }
   .file-header { padding: 6px 8px; font-size: 12px; }
   .diff-table td { padding: 0 4px; }
-  .diff-table td.gutter {
-    color: var(--accent);
-    min-width: 22px;
-    white-space: nowrap;
-  }
+  /* Make the +/-/space click target a little easier to hit on touch */
+  .diff-table td.content .sym { padding-right: 4px; }
   .comment-thread, .comment-form { font-size: 13px; }
   .comment-form textarea { box-sizing: border-box; max-width: 100%; }
 }
