@@ -17,10 +17,6 @@
     <button id="sidebar-toggle" aria-label="Toggle sidebar" title="Toggle sidebar">☰</button>
     <div class="brand">agent-review</div>
     <div class="info" id="repo-info">…</div>
-    <nav class="modes">
-      <button data-mode="working" class="mode active" title="git diff HEAD (plus untracked)">Working tree</button>
-      <button data-mode="branch" class="mode" title="git diff base HEAD">vs <span id="base-name">base</span></button>
-    </nav>
     <div class="spacer"></div>
     <button id="ignore-ws" title="Ignore whitespace">±␣</button>
     <button id="zoom-out" title="Zoom out (smaller code)">A−</button>
@@ -31,6 +27,10 @@
 
   <main>
     <aside id="sidebar">
+      <section id="compare-section">
+        <h2>Compare</h2>
+        <ul id="compare-list"></ul>
+      </section>
       <section>
         <h2>Files <span id="file-count" class="muted"></span></h2>
         <ul id="file-list"></ul>

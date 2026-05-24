@@ -66,6 +66,25 @@ def current_branch() -> str:
     return git("rev-parse", "--abbrev-ref", "HEAD").strip()
 
 
+def upstream_for_head() -> dict | None:
+    """Resolve the upstream tracking ref of the current branch (e.g.
+    `origin/master`) along with its sha and short sha. Returns None if
+    HEAD is detached or the branch has no upstream configured."""
+    ref = subprocess.run(
+        ["git", "-C", str(REPO), "rev-parse", "--abbrev-ref", "@{upstream}"],
+        capture_output=True, text=True,
+    )
+    if ref.returncode != 0:
+        return None
+    name = ref.stdout.strip()
+    if not name:
+        return None
+    sha = git("rev-parse", "--verify", "--end-of-options", name, check=False).strip()
+    if not sha:
+        return None
+    return {"ref": name, "sha": sha, "short": sha[:7]}
+
+
 def language_for(path: str | None) -> str | None:
     if not path:
         return None
@@ -606,6 +625,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "repo": str(REPO),
                     "branch": current_branch(),
                     "default_base": detect_default_base(),
+                    "upstream": upstream_for_head(),
                     "comments_path": str(COMMENTS_PATH),
                 })
                 return

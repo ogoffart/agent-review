@@ -92,27 +92,32 @@ async function applyHashState() {
   state.base = h.base || null;
   state.head = h.head || null;
   state.rangeFrom = null;
-  $$('.mode').forEach(b => b.classList.toggle('active',
-    (b.dataset.mode === 'working' && h.mode === 'working')
-    || (b.dataset.mode === 'branch' && h.mode === 'branch')));
   await loadDiff();
 }
 
 async function loadInfo() {
   state.info = await api('/api/info');
   state.base = state.info.default_base;
-  $('#base-name').textContent = state.base;
   updateHeader();
+}
+
+function shortSha(s) {
+  if (!s) return s;
+  // Abbreviate 40-char hex SHAs to 7 chars so the diff command stays
+  // readable in the (narrow) header on mobile.
+  return /^[0-9a-f]{40}$/i.test(s) ? s.slice(0, 7) : s;
 }
 
 function diffSpec() {
   const d = state.diff;
   if (!d) return '';
+  const base = shortSha(d.base);
+  const head = shortSha(d.head);
   switch (d.mode) {
-    case 'working': return `git diff ${d.base || 'HEAD'}`;
-    case 'branch':  return `git diff ${d.base} ${d.head}`;
-    case 'commit':  return `git show ${d.head}`;
-    case 'range':   return `git diff ${d.base}..${d.head}`;
+    case 'working': return `git diff ${base || 'HEAD'}`;
+    case 'branch':  return `git diff ${base} ${head}`;
+    case 'commit':  return `git show ${head}`;
+    case 'range':   return `git diff ${base}..${head}`;
     default:        return '';
   }
 }
@@ -144,6 +149,59 @@ function updateHeader() {
   info.textContent = text;
   info.title = `${state.info?.repo || ''}\n${spec}`;
   document.title = spec ? `${spec} · agent-review` : 'agent-review';
+  renderCompare();
+}
+
+function renderCompare() {
+  const ul = $('#compare-list');
+  if (!ul) return;
+  ul.innerHTML = '';
+  const def = state.info?.default_base;
+  const up = state.info?.upstream;
+  const items = [
+    {
+      label: 'Working tree',
+      cmd: 'git diff HEAD',
+      active: state.mode === 'working'
+              && (!state.base || state.base === def),
+      click: () => setMode('working'),
+    },
+  ];
+  if (def) {
+    items.push({
+      label: `vs ${def}`,
+      cmd: `git diff ${def} HEAD`,
+      active: state.mode === 'branch'
+              && (!state.base || state.base === def),
+      click: () => setMode('branch'),
+    });
+  }
+  if (up) {
+    items.push({
+      label: `vs ${up.ref}`,
+      cmd: `git diff ${up.ref} HEAD`,
+      active: state.mode === 'branch' && state.base === up.ref,
+      click: async () => {
+        state.mode = 'branch';
+        state.base = up.ref;
+        state.head = null;
+        state.commitSha = null;
+        state.rangeFrom = null;
+        await loadDiff();
+        writeHash();
+        renderCommits();
+        closeSidebarIfMobile();
+      },
+    });
+  }
+  for (const it of items) {
+    const li = document.createElement('li');
+    li.className = 'compare-item' + (it.active ? ' active' : '');
+    li.textContent = it.label;
+    li.title = it.cmd;
+    li.onclick = it.click;
+    ul.appendChild(li);
+  }
 }
 
 async function loadCommits() {
@@ -171,7 +229,6 @@ function renderCommits() {
       state.commitSha = null;
       state.base = from;
       state.head = null;
-      $$('.mode').forEach(b => b.classList.remove('active'));
       await loadDiff();
       writeHash();
       renderCommits();
@@ -190,12 +247,27 @@ function renderCommits() {
   const showBranchPoint = state.branchPoint
     && state.branchBase
     && state.branchPoint !== state.commits[0]?.sha;
+  // Show an origin-tip divider above the commit that matches the
+  // upstream ref, so the user can tell at a glance which commits
+  // haven't been pushed yet.
+  const upstream = state.info?.upstream;
+  const showUpstream = upstream
+    && upstream.sha
+    && state.commits.some(c => c.sha === upstream.sha)
+    && upstream.sha !== state.commits[0]?.sha;
   for (const c of state.commits) {
     if (showBranchPoint && c.sha === state.branchPoint) {
       const sep = document.createElement('li');
       sep.className = 'branch-point';
       sep.innerHTML = `<span>↑ on this branch · ${escapeHTML(state.branchBase)} ↓</span>`;
       sep.title = `Branch point: HEAD diverged from ${state.branchBase} at this commit`;
+      ul.appendChild(sep);
+    }
+    if (showUpstream && c.sha === upstream.sha) {
+      const sep = document.createElement('li');
+      sep.className = 'branch-point';
+      sep.innerHTML = `<span>↑ not pushed · ${escapeHTML(upstream.ref)} ↓</span>`;
+      sep.title = `${upstream.ref} is at this commit; rows above are local-only`;
       ul.appendChild(sep);
     }
     const li = document.createElement('li');
@@ -224,7 +296,6 @@ function renderCommits() {
         state.base = null;
         state.head = null;
       }
-      $$('.mode').forEach(b => b.classList.remove('active'));
       await loadDiff();
       writeHash();
       closeSidebarIfMobile();
@@ -1062,10 +1133,10 @@ async function setMode(mode) {
   state.head = null;       // and resets to the current branch / default base
   state.commitSha = null;
   state.rangeFrom = null;  // and clears any pending range comparison
-  $$('.mode').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
   await loadDiff();
   writeHash();
   renderCommits();
+  closeSidebarIfMobile();
 }
 
 const ZOOM_STEPS = [0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75];
@@ -1145,7 +1216,6 @@ window.addEventListener('DOMContentLoaded', async () => {
     await loadDiff();
     writeHash();
   };
-  $$('.mode').forEach(b => b.onclick = () => setMode(b.dataset.mode));
   $('#refresh').onclick = async () => {
     await Promise.all([loadDiff(), loadComments(), loadCommits()]);
   };
