@@ -321,25 +321,33 @@ def get_diff(mode: str, base: str | None = None, sha: str | None = None,
 
 
 def get_branches() -> list[dict]:
+    """Return local and remote-tracking branches so the client can offer
+    them as comparison bases. Remote-tracking refs (refs/remotes/...) are
+    skipped if they're just HEAD symrefs (e.g. `origin/HEAD`)."""
     sep = "\x1f"
     fmt = sep.join(["%(refname:short)", "%(objectname:short)",
-                    "%(committerdate:iso8601)", "%(subject)"])
-    out = git("branch", f"--format={fmt}")
+                    "%(committerdate:iso8601)", "%(subject)",
+                    "%(refname)", "%(symref)"])
+    out = git("for-each-ref", f"--format={fmt}",
+              "refs/heads/", "refs/remotes/")
     cur = current_branch()
     branches = []
     for line in out.strip().split("\n"):
         if not line:
             continue
         parts = line.split(sep)
-        if len(parts) < 4:
-            parts += [""] * (4 - len(parts))
-        name = parts[0].lstrip("* ").strip()
+        if len(parts) < 6:
+            parts += [""] * (6 - len(parts))
+        name, sha, date, subject, refname, symref = parts[:6]
+        if symref:
+            continue
         branches.append({
             "name": name,
-            "sha": parts[1],
-            "date": parts[2],
-            "subject": parts[3],
+            "sha": sha,
+            "date": date,
+            "subject": subject,
             "current": name == cur,
+            "remote": refname.startswith("refs/remotes/"),
         })
     return branches
 

@@ -140,16 +140,59 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
 }
 #sidebar li:hover { background: var(--border-soft); }
 .muted { color: var(--muted); font-weight: normal; font-size: 11px; }
-.compare-item { font-family: system-ui, sans-serif; font-size: 13px; }
+#compare-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.compare-item {
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+  text-align: left;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+.compare-item:hover:not(:disabled) { background: var(--border-soft); }
 .compare-item.active {
   background: var(--accent);
   color: white;
+  border-color: var(--accent);
 }
 .compare-item.active:hover { background: var(--accent); }
-.commit-row { display: flex; gap: 6px; align-items: baseline; }
+.compare-item:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+#compare-select {
+  width: 100%;
+  font-family: system-ui, sans-serif;
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+}
+.commit-row {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  border-left: 3px solid transparent;
+  padding-left: 3px !important;
+}
+.commit-row.in-diff {
+  border-left-color: var(--accent);
+  background: var(--border-soft);
+}
 .commit-row .sha { color: var(--accent); }
 .commit-row .subj { overflow: hidden; text-overflow: ellipsis; flex: 1; }
-.commit-row .from-btn {
+.commit-row .from-btn,
+.commit-row .to-btn {
   background: transparent;
   border: 1px solid var(--border);
   color: var(--muted);
@@ -161,34 +204,16 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
   font-family: var(--mono);
   flex-shrink: 0;
 }
-.commit-row .from-btn:hover { color: var(--accent); border-color: var(--accent); }
-.commit-row.from-selected .from-btn {
+.commit-row .from-btn:hover,
+.commit-row .to-btn:hover { color: var(--accent); border-color: var(--accent); }
+.commit-row.from-selected .from-btn,
+.commit-row.to-selected .to-btn {
   background: var(--accent);
   color: white;
   border-color: var(--accent);
 }
-.range-banner {
-  background: var(--accent);
-  color: white;
-  padding: 6px 8px !important;
-  border-radius: 4px;
-  margin-bottom: 6px;
-  font-family: system-ui, sans-serif !important;
-  font-size: 11px !important;
-}
-.range-banner .sha { color: white; font-family: var(--mono); font-weight: 600; }
-.range-banner .vs-wt-btn {
-  background: rgba(255, 255, 255, .2);
-  color: white;
-  border: 1px solid rgba(255, 255, 255, .4);
-  border-radius: 3px;
-  padding: 1px 6px;
-  font: inherit;
-  cursor: pointer;
-}
-.range-banner .vs-wt-btn:hover { background: rgba(255, 255, 255, .35); }
-.range-banner .clear { cursor: pointer; opacity: .8; padding: 0 4px; }
-.range-banner .clear:hover { opacity: 1; }
+.commit-row.wt-row { font-style: italic; }
+.commit-row.wt-row .subj em { font-style: italic; color: var(--muted); }
 #commit-list li.branch-point {
   font-family: system-ui, sans-serif;
   font-size: 10px;

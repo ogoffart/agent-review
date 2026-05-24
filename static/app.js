@@ -5,7 +5,8 @@ const state = {
   mode: 'working',
   base: null,
   head: null,         // branch tip to view (null = checked-out branch)
-  rangeFrom: null,    // sha picked as the "from" end of a range comparison
+  rangeFrom: null,    // commit sha (or WT_ID) picked as the "from" end
+  rangeTo: null,      // commit sha (or WT_ID) picked as the "to" end
   diff: null,
   comments: [],
   info: null,
@@ -92,6 +93,7 @@ async function applyHashState() {
   state.base = h.base || null;
   state.head = h.head || null;
   state.rangeFrom = null;
+  state.rangeTo = null;
   await loadDiff();
 }
 
@@ -163,10 +165,23 @@ function updateHeader() {
   renderCompare();
 }
 
+async function compareWithBase(ref) {
+  state.mode = 'branch';
+  state.base = ref;
+  state.head = null;
+  state.commitSha = null;
+  state.rangeFrom = null;
+  state.rangeTo = null;
+  await loadDiff();
+  writeHash();
+  renderCommits();
+  closeSidebarIfMobile();
+}
+
 function renderCompare() {
-  const ul = $('#compare-list');
-  if (!ul) return;
-  ul.innerHTML = '';
+  const wrap = $('#compare-buttons');
+  if (!wrap) return;
+  wrap.innerHTML = '';
   const def = state.info?.default_base;
   const up = state.info?.upstream;
   const items = [
@@ -175,44 +190,75 @@ function renderCompare() {
       cmd: 'git diff HEAD',
       active: state.mode === 'working'
               && (!state.base || state.base === def),
+      enabled: true,
       click: () => setMode('working'),
     },
-  ];
-  if (def) {
-    items.push({
-      label: `vs ${def}`,
-      cmd: `git diff ${def} HEAD`,
-      active: state.mode === 'branch'
+    {
+      label: def ? `vs ${def}` : 'vs base',
+      cmd: def ? `git diff ${def} HEAD` : '',
+      active: !!def && state.mode === 'branch'
               && (!state.base || state.base === def),
+      enabled: !!def,
+      title: def ? undefined : 'No default base detected',
       click: () => setMode('branch'),
-    });
-  }
-  if (up) {
-    items.push({
-      label: `vs ${up.ref}`,
-      cmd: `git diff ${up.ref} HEAD`,
-      active: state.mode === 'branch' && state.base === up.ref,
-      click: async () => {
-        state.mode = 'branch';
-        state.base = up.ref;
-        state.head = null;
-        state.commitSha = null;
-        state.rangeFrom = null;
-        await loadDiff();
-        writeHash();
-        renderCommits();
-        closeSidebarIfMobile();
-      },
-    });
-  }
+    },
+    {
+      label: up ? `vs ${up.ref}` : 'vs upstream',
+      cmd: up ? `git diff ${up.ref} HEAD` : '',
+      active: !!up && state.mode === 'branch' && state.base === up.ref,
+      enabled: !!up,
+      title: up ? undefined : 'No upstream tracking branch (push the branch first)',
+      click: () => compareWithBase(up.ref),
+    },
+  ];
   for (const it of items) {
-    const li = document.createElement('li');
-    li.className = 'compare-item' + (it.active ? ' active' : '');
-    li.textContent = it.label;
-    li.title = it.cmd;
-    li.onclick = it.click;
-    ul.appendChild(li);
+    const btn = document.createElement('button');
+    btn.className = 'compare-item' + (it.active ? ' active' : '');
+    btn.textContent = it.label;
+    btn.title = it.title || it.cmd;
+    btn.disabled = !it.enabled;
+    if (it.enabled) btn.onclick = it.click;
+    wrap.appendChild(btn);
   }
+  renderCompareSelect();
+}
+
+function renderCompareSelect() {
+  const sel = $('#compare-select');
+  if (!sel) return;
+  const branches = state.branches || [];
+  const cur = state.info?.branch;
+  const def = state.info?.default_base;
+  const up = state.info?.upstream?.ref;
+  const hidden = new Set([cur, def, up].filter(Boolean));
+  // Branches already exposed as shortcuts (current/default/upstream)
+  // get dropped from the dropdown — anything else is fair game.
+  const others = branches.filter(b => !hidden.has(b.name));
+  const activeBase = (state.mode === 'branch') ? state.base : null;
+  // Preserve the selection across re-renders even when activeBase isn't
+  // one of the shortcut buttons.
+  const selected = others.some(b => b.name === activeBase) ? activeBase : '';
+  sel.innerHTML = '<option value="">Other branch…</option>'
+    + others.map(b => {
+      const sha = b.sha ? ` (${escapeHTML(b.sha)})` : '';
+      const remote = b.remote ? ' [remote]' : '';
+      return `<option value="${escapeHTML(b.name)}"${b.name === selected ? ' selected' : ''}>${escapeHTML(b.name)}${remote}${sha}</option>`;
+    }).join('');
+  sel.onchange = () => {
+    const ref = sel.value;
+    if (!ref) return;
+    compareWithBase(ref);
+  };
+}
+
+async function loadBranches() {
+  try {
+    const data = await api('/api/branches');
+    state.branches = data.branches || [];
+  } catch (_) {
+    state.branches = [];
+  }
+  renderCompareSelect();
 }
 
 async function loadCommits() {
@@ -223,35 +269,135 @@ async function loadCommits() {
   renderCommits();
 }
 
+function resolveRefToCommitIndex(ref) {
+  if (!ref) return -1;
+  // commit-mode base is "<sha>^" — strip the caret so we can match the parent.
+  if (ref.endsWith('^')) ref = ref.slice(0, -1);
+  if (/^[0-9a-f]{4,40}$/i.test(ref)) {
+    return state.commits.findIndex(
+      c => c.sha === ref || c.sha.startsWith(ref) || ref.startsWith(c.sha));
+  }
+  if (ref === 'HEAD' || ref === state.info?.branch) return 0;
+  if (ref === state.info?.upstream?.ref) {
+    const sha = state.info.upstream.sha;
+    return state.commits.findIndex(c => c.sha === sha);
+  }
+  const b = (state.branches || []).find(x => x.name === ref);
+  if (b && b.sha) {
+    return state.commits.findIndex(c => c.sha.startsWith(b.sha) || c.short === b.sha);
+  }
+  return -1;
+}
+
+function commitsInDiffRange() {
+  // Return the set of commit SHAs that contribute to the current diff,
+  // so renderCommits can highlight them on the side panel.
+  const out = new Set();
+  const d = state.diff;
+  if (!d) return out;
+  if (d.mode === 'commit') {
+    if (d.head) out.add(d.head);
+    return out;
+  }
+  const headIdx = resolveRefToCommitIndex(d.head);
+  if (headIdx < 0) return out;
+  // In working mode without a custom base the range is empty (working
+  // tree vs HEAD), so headIdx === baseIdx — nothing to highlight.
+  const baseIdx = resolveRefToCommitIndex(d.base);
+  const end = baseIdx >= 0 ? baseIdx : state.commits.length;
+  for (let i = headIdx; i < end; i++) out.add(state.commits[i].sha);
+  return out;
+}
+
+// Sentinel used in state.rangeFrom / state.rangeTo for the
+// "Working tree" pseudo-commit row.
+const WT_ID = '__wt__';
+
+async function applyRangeFromTo() {
+  const f = state.rangeFrom, t = state.rangeTo;
+  if (!f || !t || f === t) return;
+  if (f === WT_ID && t !== WT_ID) {
+    // working tree vs commit t → working-mode diff with base=t.
+    state.mode = 'working';
+    state.base = t;
+    state.head = null;
+    state.commitSha = null;
+  } else if (t === WT_ID && f !== WT_ID) {
+    // commit f vs working tree → same diff content as above (just
+    // labeled in the opposite direction; the unified diff is symmetric
+    // for our purposes since git only knows "from..to").
+    state.mode = 'working';
+    state.base = f;
+    state.head = null;
+    state.commitSha = null;
+  } else {
+    state.mode = 'range';
+    state.base = f;
+    state.head = t;
+    state.commitSha = null;
+  }
+  await loadDiff();
+  writeHash();
+  renderCommits();
+  closeSidebarIfMobile();
+}
+
+async function toggleRangeEnd(which, id) {
+  if (which === 'from') {
+    state.rangeFrom = state.rangeFrom === id ? null : id;
+  } else {
+    state.rangeTo = state.rangeTo === id ? null : id;
+  }
+  if (state.rangeFrom && state.rangeTo && state.rangeFrom !== state.rangeTo) {
+    await applyRangeFromTo();
+  } else {
+    renderCommits();
+  }
+}
+
+function makeCommitRow({id, short, subj, title, isWt}, opts) {
+  const li = document.createElement('li');
+  li.className = 'commit-row' + (isWt ? ' wt-row' : '');
+  if (state.rangeFrom === id) li.classList.add('from-selected');
+  if (state.rangeTo === id) li.classList.add('to-selected');
+  if (opts.inDiff) li.classList.add('in-diff');
+  li.innerHTML = `
+    <button class="from-btn" title="Use as comparison base (from)">↰</button>
+    <button class="to-btn" title="Use as comparison target (to)">↱</button>
+    ${isWt ? '' : `<span class="sha">${escapeHTML(short)}</span>`}
+    <span class="subj">${isWt ? '<em>Working tree</em>' : escapeHTML(subj)}</span>
+  `;
+  if (title) li.title = title;
+  li.querySelector('.from-btn').onclick = (e) => {
+    e.stopPropagation();
+    toggleRangeEnd('from', id);
+  };
+  li.querySelector('.to-btn').onclick = (e) => {
+    e.stopPropagation();
+    toggleRangeEnd('to', id);
+  };
+  return li;
+}
+
 function renderCommits() {
   const ul = $('#commit-list');
   ul.innerHTML = '';
+  const inDiff = commitsInDiffRange();
+  // Working tree counts as "in-diff" whenever the current diff includes
+  // uncommitted changes — i.e. working mode.
+  const wtInDiff = state.diff?.mode === 'working';
 
-  if (state.rangeFrom) {
-    const banner = document.createElement('li');
-    banner.className = 'range-banner';
-    const short = state.rangeFrom.slice(0, 7);
-    banner.innerHTML = `From <span class="sha">${escapeHTML(short)}</span> → pick a commit, or <button class="vs-wt-btn">working tree</button> <span class="clear" title="Cancel">⨯</span>`;
-    banner.querySelector('.vs-wt-btn').onclick = async (e) => {
-      e.stopPropagation();
-      const from = state.rangeFrom;
-      state.rangeFrom = null;
-      state.mode = 'working';
-      state.commitSha = null;
-      state.base = from;
-      state.head = null;
-      await loadDiff();
-      writeHash();
-      renderCommits();
-      closeSidebarIfMobile();
-    };
-    banner.querySelector('.clear').onclick = (e) => {
-      e.stopPropagation();
-      state.rangeFrom = null;
-      renderCommits();
-    };
-    ul.appendChild(banner);
-  }
+  // Working-tree pseudo row, always first.
+  const wt = makeCommitRow(
+    { id: WT_ID, isWt: true, title: 'Uncommitted changes' },
+    { inDiff: wtInDiff },
+  );
+  wt.onclick = () => {
+    state.rangeFrom = null;
+    state.rangeTo = null;
+    setMode('working');
+  };
+  ul.appendChild(wt);
 
   // Suppress the branch-point divider when HEAD == base (no divergence,
   // so the divider would land above the first commit and just be noise).
@@ -281,34 +427,23 @@ function renderCommits() {
       sep.title = `${upstream.ref} is at this commit; rows above are local-only`;
       ul.appendChild(sep);
     }
-    const li = document.createElement('li');
-    li.className = 'commit-row';
-    if (c.sha === state.rangeFrom) li.classList.add('from-selected');
-    li.innerHTML = `
-      <button class="from-btn" title="Use as comparison base">↰</button>
-      <span class="sha">${escapeHTML(c.short)}</span>
-      <span class="subj">${escapeHTML(c.subject)}</span>
-    `;
-    li.title = `${c.author} · ${c.date}\n${c.sha}`;
-    li.querySelector('.from-btn').onclick = (e) => {
-      e.stopPropagation();
-      state.rangeFrom = state.rangeFrom === c.sha ? null : c.sha;
-      renderCommits();
-    };
+    const li = makeCommitRow(
+      { id: c.sha, short: c.short, subj: c.subject,
+        title: `${c.author} · ${c.date}\n${c.sha}` },
+      { inDiff: inDiff.has(c.sha) },
+    );
     li.onclick = async () => {
-      if (state.rangeFrom && state.rangeFrom !== c.sha) {
-        state.mode = 'range';
-        state.commitSha = null;
-        state.base = state.rangeFrom;
-        state.head = c.sha;
-      } else {
-        state.mode = 'commit';
-        state.commitSha = c.sha;
-        state.base = null;
-        state.head = null;
-      }
+      // Body click on a commit row: quick single-commit view, clearing
+      // any half-set from/to selection. Buttons handle range setup.
+      state.mode = 'commit';
+      state.commitSha = c.sha;
+      state.base = null;
+      state.head = null;
+      state.rangeFrom = null;
+      state.rangeTo = null;
       await loadDiff();
       writeHash();
+      renderCommits();
       closeSidebarIfMobile();
     };
     ul.appendChild(li);
@@ -374,6 +509,9 @@ function render() {
   detectMovedLines(files);
   files.forEach((f, i) => root.appendChild(renderFile(f, i)));
   renderInlineComments();
+  // The diff range highlight on the commit list depends on state.diff,
+  // so refresh it whenever a new diff arrives.
+  if (state.commits.length) renderCommits();
 }
 
 const COMMIT_MSG_FILE = ':commit-message';
@@ -1144,6 +1282,7 @@ async function setMode(mode) {
   state.head = null;       // and resets to the current branch / default base
   state.commitSha = null;
   state.rangeFrom = null;  // and clears any pending range comparison
+  state.rangeTo = null;
   await loadDiff();
   writeHash();
   renderCommits();
@@ -1228,7 +1367,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     writeHash();
   };
   $('#refresh').onclick = async () => {
-    await Promise.all([loadDiff(), loadComments(), loadCommits()]);
+    await Promise.all([loadDiff(), loadComments(), loadCommits(), loadBranches()]);
   };
   $('#sidebar-toggle').onclick = () => document.body.classList.toggle('sidebar-open');
   $('#sidebar-backdrop').onclick = () => document.body.classList.remove('sidebar-open');
@@ -1245,9 +1384,9 @@ window.addEventListener('DOMContentLoaded', async () => {
   await loadInfo();
   if (window.location.hash) {
     await applyHashState();
-    await Promise.all([loadComments(), loadCommits()]);
+    await Promise.all([loadComments(), loadCommits(), loadBranches()]);
   } else {
-    await Promise.all([loadDiff(), loadComments(), loadCommits()]);
+    await Promise.all([loadDiff(), loadComments(), loadCommits(), loadBranches()]);
     writeHash();
   }
 });

@@ -27,13 +27,16 @@
 
   <main>
     <aside id="sidebar">
-      <section id="compare-section">
-        <h2>Compare</h2>
-        <ul id="compare-list"></ul>
-      </section>
       <section>
         <h2>Files <span id="file-count" class="muted"></span></h2>
         <ul id="file-list"></ul>
+      </section>
+      <section id="compare-section">
+        <h2>Compare</h2>
+        <div id="compare-buttons"></div>
+        <select id="compare-select" title="Compare against another branch">
+          <option value="">Other branch…</option>
+        </select>
       </section>
       <section>
         <h2>Comments <span id="comment-count" class="muted"></span></h2>
