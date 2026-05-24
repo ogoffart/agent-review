@@ -144,9 +144,20 @@ function updateHeader() {
     }
     rollup = ` · +${adds} −${dels} in ${files.length} file${files.length === 1 ? '' : 's'}`;
   }
-  const text = spec ? `${repo} · ${spec}${rollup}` : repo;
   const info = $('#repo-info');
-  info.textContent = text;
+  if (spec) {
+    // Split repo/"git" into their own spans so CSS can hide them on
+    // narrow viewports — the remaining `<op> <args> · +N -M` still
+    // tells you what diff you're looking at without eating screen
+    // width on mobile.
+    const specRest = spec.replace(/^git\s+/, '');
+    info.innerHTML =
+      `<span class="info-repo">${escapeHTML(repo)} · </span>`
+      + `<span class="info-git">git </span>`
+      + `${escapeHTML(specRest)}${escapeHTML(rollup)}`;
+  } else {
+    info.textContent = repo;
+  }
   info.title = `${state.info?.repo || ''}\n${spec}`;
   document.title = spec ? `${spec} · agent-review` : 'agent-review';
   renderCompare();

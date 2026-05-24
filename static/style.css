@@ -601,9 +601,11 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
   #diff-pane { overflow: visible; padding: 8px; }
   #sidebar-resizer { display: none; }
   #sidebar-toggle { display: inline-block; }
-  /* .info keeps showing on mobile so the diff command is visible —
-     diffSpec() abbreviates SHAs to 7 chars to keep it short. */
+  /* .info keeps showing on mobile, but the repo name and the "git "
+     prefix are dropped to save space — the op + args + rollup are
+     enough on a narrow screen. */
   .info { font-size: 11px; }
+  .info-repo, .info-git { display: none; }
   #sidebar {
     position: fixed;
     top: 49px; bottom: 0; left: 0;
