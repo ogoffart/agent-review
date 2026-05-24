@@ -417,12 +417,17 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
   border-color: var(--accent);
 }
 /* .word marks the *unchanged* portion of a word-diff line; it gets a
- * lighter background than the line tint so the real change reads as
- * the foreground. */
-/* .word is text-height only (no padding hack): the surrounding row
-   tint (td.content background) shows through above and below as the
-   line's leading, so there are no light-coloured strips bleeding into
-   neighbouring rows. */
+   lighter background than the line tint so the change reads as the
+   foreground. inline-block + vertical-align: top + matching line-height
+   makes the highlight fill the row's full line-box (an inline span's
+   background otherwise covers only the glyph area, leaving ~1px slivers
+   of the darker row tint visible in the leading above and below). */
+.diff-table tr.add td.content .word,
+.diff-table tr.del td.content .word {
+  display: inline-block;
+  vertical-align: top;
+  line-height: 1.5;
+}
 .diff-table tr.add td.content .word { background: var(--add-bg); }
 .diff-table tr.del td.content .word { background: var(--del-bg); }
 
