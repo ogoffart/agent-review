@@ -362,6 +362,20 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
 .diff-table td.content { width: 100%; }
 .diff-table tr.add td.content { background: var(--add-line); }
 .diff-table tr.del td.content { background: var(--del-line); }
+/* tail-light: when a line's tail is unchanged from the other side,
+   flip the row to the lighter "unchanged" tint and wrap the actual
+   text in .line with the darker tint, so the area to the right of
+   the text reads as unchanged. .line is inline-block so its background
+   fills the full row line-height. */
+.diff-table tr.add td.content.tail-light { background: var(--add-bg); }
+.diff-table tr.add td.content.tail-light .line { background: var(--add-line); }
+.diff-table tr.del td.content.tail-light { background: var(--del-bg); }
+.diff-table tr.del td.content.tail-light .line { background: var(--del-line); }
+.diff-table td.content .line {
+  display: inline-block;
+  vertical-align: top;
+  line-height: 1.5;
+}
 .diff-table tr.add.moved td.content { background: var(--add-line-moved); }
 .diff-table tr.del.moved td.content { background: var(--del-line-moved); }
 /* The first character (+/-/space) is the click target for 'add comment'. */

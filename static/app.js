@@ -438,16 +438,20 @@ function createLineRow(line, file, wordHTMLOverride) {
   // line numbers).
   row.dataset.text = line.text;
 
-  let contentHTML;
+  let contentHTML, tailUnchanged = false;
   if (wordHTMLOverride != null && typeof wordHTMLOverride === 'object') {
     contentHTML = wordHTMLOverride.html;
+    tailUnchanged = wordHTMLOverride.tailUnchanged;
   } else if (wordHTMLOverride != null) {
     contentHTML = wordHTMLOverride;
   } else {
     contentHTML = highlightCode(line.text, file.language);
   }
   const sym = line.type === 'add' ? '+' : line.type === 'del' ? '−' : ' ';
-  row.innerHTML = `<td class="content"><span class="sym" title="Add comment">${sym} </span>${contentHTML}</td>`;
+  const tdClass = 'content' + (tailUnchanged ? ' tail-light' : '');
+  const inner = `<span class="sym" title="Add comment">${sym} </span>${contentHTML}`;
+  const body = tailUnchanged ? `<span class="line">${inner}</span>` : inner;
+  row.innerHTML = `<td class="${tdClass}">${body}</td>`;
   row.querySelector('.sym').onclick = (e) => {
     e.stopPropagation();
     openCommentForm(row);
