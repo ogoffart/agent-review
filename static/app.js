@@ -438,20 +438,16 @@ function createLineRow(line, file, wordHTMLOverride) {
   // line numbers).
   row.dataset.text = line.text;
 
-  let contentHTML, tailUnchanged = false;
+  let contentHTML;
   if (wordHTMLOverride != null && typeof wordHTMLOverride === 'object') {
     contentHTML = wordHTMLOverride.html;
-    tailUnchanged = wordHTMLOverride.tailUnchanged;
   } else if (wordHTMLOverride != null) {
     contentHTML = wordHTMLOverride;
   } else {
     contentHTML = highlightCode(line.text, file.language);
   }
   const sym = line.type === 'add' ? '+' : line.type === 'del' ? '−' : ' ';
-  const tdClass = 'content' + (tailUnchanged ? ' tail-light' : '');
-  row.innerHTML = `
-    <td class="${tdClass}"><span class="line"><span class="sym" title="Add comment">${sym} </span>${contentHTML}</span></td>
-  `;
+  row.innerHTML = `<td class="content"><span class="sym" title="Add comment">${sym} </span>${contentHTML}</td>`;
   row.querySelector('.sym').onclick = (e) => {
     e.stopPropagation();
     openCommentForm(row);
@@ -719,7 +715,7 @@ function openFileComment(wrap, header) {
   const tpl = $('#comment-form-tpl').content.cloneNode(true);
   const form = document.createElement('div');
   form.className = 'file-comment-form';
-  form.appendChild(tpl);
+  form.appendChild(tpl.querySelector('.comment-form'));
   header.after(form);
   const ta = form.querySelector('textarea');
   ta.focus();
@@ -756,8 +752,12 @@ function openCommentForm(row) {
   const formRow = document.createElement('tr');
   formRow.className = 'comment-row-tr comment-form-row';
   const td = document.createElement('td');
+  // Append only the .comment-form element, skipping the surrounding
+  // whitespace text nodes that the template's indentation produces —
+  // those nodes inherit line-height: 1.5 from .diff-table and would
+  // render as ~16px of vertical padding above and below the form.
   const tpl = $('#comment-form-tpl').content.cloneNode(true);
-  td.appendChild(tpl);
+  td.appendChild(tpl.querySelector('.comment-form'));
   formRow.appendChild(td);
   row.after(formRow);
   const ta = formRow.querySelector('textarea');

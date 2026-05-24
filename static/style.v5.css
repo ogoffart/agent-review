@@ -373,12 +373,6 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
   background: rgba(9, 105, 218, 0.18);   /* accent at low alpha */
   border-radius: 2px;
 }
-/* tail-light: line ends with an unchanged segment — fill the area to
- * the right of the actual text with the lighter "unchanged" tint. */
-.diff-table tr.add td.content.tail-light { background: var(--add-bg); }
-.diff-table tr.add td.content.tail-light .line { background: var(--add-line); }
-.diff-table tr.del td.content.tail-light { background: var(--del-bg); }
-.diff-table tr.del td.content.tail-light .line { background: var(--del-line); }
 .diff-table td.content .sym { color: var(--muted); }
 .diff-table tr.hunk td {
   background: var(--hunk-bg);
