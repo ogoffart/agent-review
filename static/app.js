@@ -251,8 +251,14 @@ async function loadDiff() {
     if (state.base) url += `&base=${encodeURIComponent(state.base)}`;
     if (state.head) url += `&head=${encodeURIComponent(state.head)}`;
   } else {
-    // working mode optionally takes a base ref (e.g. 'compare vs working tree')
-    if (state.base) url += `&base=${encodeURIComponent(state.base)}`;
+    // Working mode normally diffs vs HEAD. state.base is auto-seeded
+    // from default_base (master/main) to label the "vs base" button —
+    // skip it here so the working-tree view doesn't silently turn into
+    // a vs-master diff with the wrong button highlighted. Pass it only
+    // when the user explicitly picked a comparison ref.
+    if (state.base && state.base !== state.info?.default_base) {
+      url += `&base=${encodeURIComponent(state.base)}`;
+    }
   }
   if (state.ignoreWs) url += '&ignore_ws=1';
   state.diff = await api(url);
