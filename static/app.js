@@ -671,6 +671,16 @@ function renderFile(file, idx) {
   return wrap;
 }
 
+function leadingIndentCols(text, tabSize = 4) {
+  let col = 0;
+  for (const ch of text) {
+    if (ch === ' ') col += 1;
+    else if (ch === '\t') col += tabSize - (col % tabSize);
+    else break;
+  }
+  return col;
+}
+
 function createLineRow(line, file, wordHTMLOverride) {
   const row = document.createElement('tr');
   const cls = line.type === 'add' ? 'add' : line.type === 'del' ? 'del' : 'ctx';
@@ -685,6 +695,9 @@ function createLineRow(line, file, wordHTMLOverride) {
   // by content when the line moves between diffs (edits above shift
   // line numbers).
   row.dataset.text = line.text;
+  // Hanging-indent column count for wrap mode (CSS reads var(--indent)).
+  const indent = leadingIndentCols(line.text);
+  if (indent > 0) row.style.setProperty('--indent', indent);
 
   let contentHTML, tailUnchanged = false;
   if (wordHTMLOverride != null && typeof wordHTMLOverride === 'object') {
@@ -1391,6 +1404,16 @@ window.addEventListener('DOMContentLoaded', async () => {
     wsBtn.classList.toggle('active', state.ignoreWs);
     await loadDiff();
     writeHash();
+  };
+  state.wrap = localStorage.getItem('agent-review-wrap') === '1';
+  document.body.classList.toggle('wrap', state.wrap);
+  const wrapBtn = $('#wrap-toggle');
+  wrapBtn.classList.toggle('active', state.wrap);
+  wrapBtn.onclick = () => {
+    state.wrap = !state.wrap;
+    localStorage.setItem('agent-review-wrap', state.wrap ? '1' : '0');
+    wrapBtn.classList.toggle('active', state.wrap);
+    document.body.classList.toggle('wrap', state.wrap);
   };
   $('#refresh').onclick = async () => {
     await Promise.all([loadDiff(), loadComments(), loadCommits(), loadBranches()]);

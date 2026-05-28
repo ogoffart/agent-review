@@ -71,7 +71,7 @@ header {
 .info { color: var(--muted); font-family: var(--mono); font-size: 12px;
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .spacer { flex: 1; }
-#refresh, #sidebar-toggle, #zoom-in, #zoom-out, #ignore-ws {
+#refresh, #sidebar-toggle, #zoom-in, #zoom-out, #ignore-ws, #wrap-toggle {
   background: transparent;
   border: 1px solid var(--border);
   color: var(--text);
@@ -84,8 +84,9 @@ header {
   flex-shrink: 0;
   font-family: var(--mono);
 }
-#refresh, #sidebar-toggle { font-size: 16px; padding: 0; width: 32px; }
-#ignore-ws.active { background: var(--accent); color: white; border-color: var(--accent); }
+#refresh, #sidebar-toggle, #wrap-toggle { font-size: 16px; padding: 0; width: 32px; }
+#ignore-ws.active,
+#wrap-toggle.active { background: var(--accent); color: white; border-color: var(--accent); }
 #sidebar-toggle { display: none; }
 #sidebar-backdrop {
   display: none;
@@ -387,6 +388,7 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
   font-family: var(--mono);
   font-size: calc(var(--code-base) * var(--zoom));
   line-height: 1.5;
+  tab-size: 4;
 }
 .diff-table td {
   padding: 0 8px;
@@ -412,6 +414,32 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
 }
 .diff-table tr.add.moved td.content { background: var(--add-line-moved); }
 .diff-table tr.del.moved td.content { background: var(--del-line-moved); }
+
+/* Wrap mode: long lines wrap, continuation lines hang-indent to the
+   source line's indentation, and a 2px accent stripe on the cell's left
+   edge marks every wrapped row. The stripe is painted via a gradient
+   sized to (height - 1 line) so it only shows on cells that wrap. */
+body.wrap .file { width: auto; }   /* shrink to pane: no horizontal scroll */
+body.wrap .diff-table td.content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  /* sym (+/− + space) = 2 chars; var(--indent) = leading-whitespace cols. */
+  padding-left: calc(8px + (var(--indent, 0) + 2) * 1ch);
+  text-indent: calc((var(--indent, 0) + 2) * -1ch);
+}
+body.wrap .diff-table td.content .line {
+  /* tail-light wrapper is inline-block normally; collapse to inline so
+     the cell's pre-wrap can break inside it. */
+  display: inline;
+}
+body.wrap .diff-table tr.add td.content,
+body.wrap .diff-table tr.del td.content,
+body.wrap .diff-table tr.ctx td.content {
+  background-image: linear-gradient(var(--accent), var(--accent));
+  background-size: 2px max(0px, calc(100% - 1.5em));
+  background-position: 0 1.5em;
+  background-repeat: no-repeat;
+}
 /* The first character (+/-/space) is the click target for 'add comment'. */
 .diff-table td.content .sym {
   cursor: pointer;
