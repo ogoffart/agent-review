@@ -672,6 +672,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return
                 _reject_flaglike(ref, "ref")
                 _reject_flaglike(path, "path")
+                if ref == "WORKTREE":
+                    repo_root = REPO.resolve()
+                    target = (repo_root / path).resolve()
+                    try:
+                        target.relative_to(repo_root)
+                    except ValueError:
+                        self._json(400, {"error": "path outside repo"})
+                        return
+                    try:
+                        text = target.read_text()
+                    except FileNotFoundError:
+                        self._json(200, {"lines": []})
+                        return
+                    self._json(200, {"lines": text.splitlines()})
+                    return
                 out = git("show", "--end-of-options", f"{ref}:{path}", check=False)
                 self._json(200, {"lines": out.splitlines()})
                 return

@@ -734,17 +734,21 @@ function makeTrailingExpandRow(file, lastNewLine, lastOldLine) {
 const blobCache = new Map();
 
 function contextRef() {
-  // For working mode the unchanged lines are the same in HEAD and the
-  // working tree, so HEAD is fine. Otherwise use the "to" side.
-  if (state.mode === 'working') return 'HEAD';
+  // Read context lines from the new side of the diff so the line
+  // numbers in @@ headers (which are relative to the new side) line up
+  // with the blob we index into. For working mode that's the on-disk
+  // working tree, exposed by the server under the WORKTREE sentinel.
+  if (state.mode === 'working') return 'WORKTREE';
   return state.diff?.head || 'HEAD';
 }
 
 async function fetchBlobLines(ref, path) {
   const key = `${ref}::${path}`;
-  if (blobCache.has(key)) return blobCache.get(key);
+  // Working-tree blobs change as the user edits files; skip the cache
+  // for WORKTREE so each expand sees the current on-disk content.
+  if (ref !== 'WORKTREE' && blobCache.has(key)) return blobCache.get(key);
   const data = await api(`/api/blob?ref=${encodeURIComponent(ref)}&path=${encodeURIComponent(path)}`);
-  blobCache.set(key, data.lines);
+  if (ref !== 'WORKTREE') blobCache.set(key, data.lines);
   return data.lines;
 }
 
