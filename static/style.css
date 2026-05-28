@@ -264,8 +264,13 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
 
 #diff-pane {
   overflow: auto;          /* single scroll region for all files, both axes */
-  padding: 12px;
+  /* No padding-top: it would offset sticky .file-header children and
+     leave a strip of code peeking out between the page header and the
+     stuck filename row. The first file's own margin-top supplies the
+     initial breathing room instead. */
+  padding: 0 12px 12px;
 }
+#diff-root > .file:first-child { margin-top: 12px; }
 .empty { color: var(--muted); padding: 24px; text-align: center; }
 
 .file {
