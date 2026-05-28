@@ -355,17 +355,39 @@ async function toggleRangeEnd(which, id) {
   }
 }
 
-function makeCommitRow({id, short, subj, title, isWt}, opts) {
+function relativeDate(iso) {
+  if (!iso) return '';
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return '';
+  const sec = Math.floor((Date.now() - t.getTime()) / 1000);
+  if (sec < 60) return 'just now';
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
+  const days = Math.floor(sec / 86400);
+  if (days < 7) return `${days}d ago`;
+  if (days < 30) return `${Math.floor(days / 7)}w ago`;
+  const opts = { month: 'short', day: 'numeric' };
+  if (t.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+  return t.toLocaleDateString(undefined, opts);
+}
+
+function makeCommitRow({id, short, subj, date, title, isWt}, opts) {
   const li = document.createElement('li');
   li.className = 'commit-row' + (isWt ? ' wt-row' : '');
   if (state.rangeFrom === id) li.classList.add('from-selected');
   if (state.rangeTo === id) li.classList.add('to-selected');
   if (opts.inDiff) li.classList.add('in-diff');
+  const dateStr = isWt ? '' : relativeDate(date);
   li.innerHTML = `
-    <button class="from-btn" title="Use as comparison base (from)">↰</button>
-    <button class="to-btn" title="Use as comparison target (to)">↱</button>
-    ${isWt ? '' : `<span class="sha">${escapeHTML(short)}</span>`}
-    <span class="subj">${isWt ? '<em>Working tree</em>' : escapeHTML(subj)}</span>
+    <div class="row-top">
+      <button class="from-btn" title="Use as comparison base (from)">↰</button>
+      <button class="to-btn" title="Use as comparison target (to)">↱</button>
+      ${isWt
+        ? '<span class="subj"><em>Working tree</em></span>'
+        : `<span class="sha">${escapeHTML(short)}</span>
+           <span class="date">${escapeHTML(dateStr)}</span>`}
+    </div>
+    ${isWt ? '' : `<div class="row-bottom"><span class="subj">${escapeHTML(subj)}</span></div>`}
   `;
   if (title) li.title = title;
   li.querySelector('.from-btn').onclick = (e) => {

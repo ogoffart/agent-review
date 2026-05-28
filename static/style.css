@@ -180,8 +180,8 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
 }
 .commit-row {
   display: flex;
-  gap: 6px;
-  align-items: baseline;
+  flex-direction: column;
+  gap: 1px;
   border-left: 3px solid transparent;
   padding-left: 3px !important;
 }
@@ -189,7 +189,16 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
   border-left-color: var(--accent);
   background: var(--border-soft);
 }
-.commit-row .sha { color: var(--accent); }
+.commit-row .row-top,
+.commit-row .row-bottom {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+}
+.commit-row .row-bottom { padding-left: 2px; }
+.commit-row .sha { color: var(--accent); flex-shrink: 0; }
+.commit-row .date { color: var(--muted); font-size: 10px; margin-left: auto; flex-shrink: 0; }
 .commit-row .subj { overflow: hidden; text-overflow: ellipsis; flex: 1; }
 .commit-row .from-btn,
 .commit-row .to-btn {
