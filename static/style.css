@@ -431,9 +431,11 @@ body.wrap .diff-table td.content {
   padding-left: calc(8px + (var(--indent, 0) + 2) * 1ch);
   text-indent: calc((var(--indent, 0) + 2) * -1ch);
 }
-body.wrap .diff-table td.content .line {
-  /* tail-light wrapper is inline-block normally; collapse to inline so
-     the cell's pre-wrap can break inside it. */
+body.wrap .diff-table td.content .line,
+body.wrap .diff-table td.content .word {
+  /* tail-light and word-diff wrappers are inline-block normally, which
+     prevents pre-wrap from breaking inside them; collapse to inline so
+     wrapping can happen anywhere in the line. */
   display: inline;
 }
 body.wrap .diff-table tr.add td.content,
