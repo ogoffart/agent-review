@@ -419,7 +419,11 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
    source line's indentation, and a 2px accent stripe on the cell's left
    edge marks every wrapped row. The stripe is painted via a gradient
    sized to (height - 1 line) so it only shows on cells that wrap. */
-body.wrap .file { width: auto; }   /* shrink to pane: no horizontal scroll */
+/* Shrink the file and its table back to the pane width so cells have a
+   real width constraint to wrap against — otherwise `width: max-content`
+   keeps the table as wide as its longest unwrapped line. */
+body.wrap .file { width: auto; }
+body.wrap .diff-table { width: 100%; }
 body.wrap .diff-table td.content {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
