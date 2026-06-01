@@ -671,8 +671,12 @@ function renderFile(file, idx) {
   return wrap;
 }
 
-function leadingIndentCols(text, tabSize = 4) {
-  let col = 0;
+function lineStartCol(text, tabSize = 4) {
+  // Column where the source line's first non-whitespace char lands in
+  // the rendered diff. Starts at col 2 (after the +/-/space sym) so tab
+  // stops line up with what the browser actually paints — a leading
+  // \t advances by (tabSize - 2 % tabSize) cols, not a full tabSize.
+  let col = 2;
   for (const ch of text) {
     if (ch === ' ') col += 1;
     else if (ch === '\t') col += tabSize - (col % tabSize);
@@ -695,9 +699,9 @@ function createLineRow(line, file, wordHTMLOverride) {
   // by content when the line moves between diffs (edits above shift
   // line numbers).
   row.dataset.text = line.text;
-  // Hanging-indent column count for wrap mode (CSS reads var(--indent)).
-  const indent = leadingIndentCols(line.text);
-  if (indent > 0) row.style.setProperty('--indent', indent);
+  // Column where the source's content starts; CSS uses var(--indent) to
+  // hang-indent wrapped continuations to this column.
+  row.style.setProperty('--indent', lineStartCol(line.text));
 
   let contentHTML, tailUnchanged = false;
   if (wordHTMLOverride != null && typeof wordHTMLOverride === 'object') {

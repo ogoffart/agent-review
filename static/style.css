@@ -22,6 +22,7 @@
   --hunk-fg: #0550ae;
   --comment-bg: #fff8c5;
   --comment-border: #d4a72c;
+  --wrap-tint: rgba(0, 0, 0, .06);
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
@@ -48,6 +49,7 @@
     --hunk-fg: #79c0ff;
     --comment-bg: #3a2f00;
     --comment-border: #d4a72c;
+    --wrap-tint: rgba(255, 255, 255, .06);
   }
 }
 
@@ -416,35 +418,54 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
 .diff-table tr.del.moved td.content { background: var(--del-line-moved); }
 
 /* Wrap mode: long lines wrap, continuation lines hang-indent to the
-   source line's indentation, and a 2px accent stripe on the cell's left
-   edge marks every wrapped row. The stripe is painted via a gradient
-   sized to (height - 1 line) so it only shows on cells that wrap. */
+   source line's indentation, and the hanging-indent "gutter" gets a
+   subtle tint on the cells that actually wrapped — painted via a
+   gradient sized to (height - 1 line) so it only shows on the
+   continuation portion. */
 /* Shrink the file and its table back to the pane width so cells have a
    real width constraint to wrap against — otherwise `width: max-content`
    keeps the table as wide as its longest unwrapped line. */
 body.wrap .file { width: auto; }
-body.wrap .diff-table { width: 100%; }
+body.wrap .diff-table {
+  width: 100%;
+  /* `table-layout: auto` (the default) sizes columns from the cell's
+     "preferred" width, which ignores overflow-wrap: break-word — so a
+     single long token grows the table past 100% and the cell never
+     wraps. `fixed` makes the column respect the table's width, and the
+     cell wraps as expected. The table is effectively single-column
+     (every row has one <td>), so we don't need explicit colgroups. */
+  table-layout: fixed;
+}
 body.wrap .diff-table td.content {
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  /* sym (+/− + space) = 2 chars; var(--indent) = leading-whitespace cols. */
-  padding-left: calc(8px + (var(--indent, 0) + 2) * 1ch);
-  text-indent: calc((var(--indent, 0) + 2) * -1ch);
+  overflow-wrap: break-word;
+  /* Hanging indent: continuations align with the source's first
+     non-whitespace column. --indent is set per row by JS and is the
+     absolute column (including the 2-char sym prefix). padding-left
+     shifts content to that column; text-indent pulls the first line
+     back so the sym sits flush at col 0. */
+  --hang: calc(var(--indent, 2) * 1ch);
+  padding-left: calc(8px + var(--hang));
+  text-indent: calc(var(--hang) * -1);
+  /* Indicator: tint the source-indent portion of the hang on cells that
+     actually wrapped. The gradient sits 1 line down with height
+     (cell-height − 1 line), so it's invisible on single-line cells and
+     covers the continuation rows on wrapped cells. Width skips the
+     2ch sym column — unindented wrapped lines get no stripe. */
+  background-image: linear-gradient(var(--wrap-tint), var(--wrap-tint));
+  background-repeat: no-repeat;
+  background-position: calc(8px + 2ch) 1.5em;
+  background-size: max(0px, var(--hang) - 2ch) max(0px, calc(100% - 1.5em));
 }
 body.wrap .diff-table td.content .line,
-body.wrap .diff-table td.content .word {
+body.wrap .diff-table tr.add td.content .word,
+body.wrap .diff-table tr.del td.content .word {
   /* tail-light and word-diff wrappers are inline-block normally, which
      prevents pre-wrap from breaking inside them; collapse to inline so
-     wrapping can happen anywhere in the line. */
+     wrapping can happen anywhere in the line. The tr.add/tr.del selectors
+     match (and outweigh) the existing .word rule's specificity, which
+     would otherwise win because it lives further down the file. */
   display: inline;
-}
-body.wrap .diff-table tr.add td.content,
-body.wrap .diff-table tr.del td.content,
-body.wrap .diff-table tr.ctx td.content {
-  background-image: linear-gradient(var(--accent), var(--accent));
-  background-size: 2px max(0px, calc(100% - 1.5em));
-  background-position: 0 1.5em;
-  background-repeat: no-repeat;
 }
 /* The first character (+/-/space) is the click target for 'add comment'. */
 .diff-table td.content .sym {
