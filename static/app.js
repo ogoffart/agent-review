@@ -504,6 +504,27 @@ async function loadDiff() {
   render();
 }
 
+let _wrapObserver = null;
+
+// Mark cells that actually wrapped with `.wrapped` so CSS can show the
+// indent tint + wrap glyph on them. ResizeObserver re-evaluates on font
+// changes, sidebar resize, viewport changes — anything that shifts cell
+// height — so the mark stays in sync without explicit hooks.
+function refreshWrapObserver() {
+  if (!_wrapObserver) {
+    _wrapObserver = new ResizeObserver((entries) => {
+      for (const e of entries) {
+        const td = e.target;
+        const fs = parseFloat(getComputedStyle(td).fontSize) || 14;
+        // 1.5 = our line-height multiplier; +1px epsilon for sub-pixel slop.
+        td.classList.toggle('wrapped', td.offsetHeight > 1.5 * fs + 1);
+      }
+    });
+  }
+  _wrapObserver.disconnect();
+  $$('.diff-table td.content').forEach(td => _wrapObserver.observe(td));
+}
+
 function render() {
   updateHeader();
   const root = $('#diff-root');
@@ -534,6 +555,7 @@ function render() {
   // The diff range highlight on the commit list depends on state.diff,
   // so refresh it whenever a new diff arrives.
   if (state.commits.length) renderCommits();
+  refreshWrapObserver();
 }
 
 const COMMIT_MSG_FILE = ':commit-message';
@@ -1418,6 +1440,10 @@ window.addEventListener('DOMContentLoaded', async () => {
     localStorage.setItem('agent-review-wrap', state.wrap ? '1' : '0');
     wrapBtn.classList.toggle('active', state.wrap);
     document.body.classList.toggle('wrap', state.wrap);
+    // Cells that already fit on one line don't resize when wrap mode
+    // flips, so the observer wouldn't refire for them — re-observe to
+    // force a fresh measure of every cell.
+    refreshWrapObserver();
   };
   $('#refresh').onclick = async () => {
     await Promise.all([loadDiff(), loadComments(), loadCommits(), loadBranches()]);

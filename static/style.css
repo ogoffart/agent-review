@@ -24,6 +24,8 @@
   --comment-border: #d4a72c;
   --wrap-tint: rgba(0, 0, 0, .06);
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --cell-pad: 8px;
+  --wrap-arrow: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 18'><path d='M9 6 L9 11 L4 11 M6 9 L4 11 L6 13' stroke='%230969da' fill='none' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
 }
 
 @media (prefers-color-scheme: dark) {
@@ -50,6 +52,7 @@
     --comment-bg: #3a2f00;
     --comment-border: #d4a72c;
     --wrap-tint: rgba(255, 255, 255, .06);
+    --wrap-arrow: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 18'><path d='M9 6 L9 11 L4 11 M6 9 L4 11 L6 13' stroke='%234493f8' fill='none' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
   }
 }
 
@@ -393,7 +396,7 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
   tab-size: 4;
 }
 .diff-table td {
-  padding: 0 8px;
+  padding: 0 var(--cell-pad);
   vertical-align: top;
   white-space: pre;
 }
@@ -439,23 +442,45 @@ body.wrap .diff-table {
 body.wrap .diff-table td.content {
   white-space: pre-wrap;
   overflow-wrap: break-word;
+  /* Position context for the ::after wrap glyph. */
+  position: relative;
   /* Hanging indent: continuations align with the source's first
      non-whitespace column. --indent is set per row by JS and is the
      absolute column (including the 2-char sym prefix). padding-left
      shifts content to that column; text-indent pulls the first line
-     back so the sym sits flush at col 0. */
+     back so the sym sits flush at col 0. Right padding leaves room
+     for the wrap glyph so it doesn't overlap the line text. */
   --hang: calc(var(--indent, 2) * 1ch);
-  padding-left: calc(8px + var(--hang));
+  padding-left: calc(var(--cell-pad) + var(--hang));
   text-indent: calc(var(--hang) * -1);
-  /* Indicator: tint the source-indent portion of the hang on cells that
-     actually wrapped. The gradient sits 1 line down with height
-     (cell-height − 1 line), so it's invisible on single-line cells and
-     covers the continuation rows on wrapped cells. Width skips the
-     2ch sym column — unindented wrapped lines get no stripe. */
+}
+/* On wrapped cells: faint indent tint on the continuation rows,
+   between the sym column and the source's first non-whitespace column.
+   Continuation-only — the first row (with the +/-/space sym) stays at
+   its normal background. */
+body.wrap .diff-table td.content.wrapped {
   background-image: linear-gradient(var(--wrap-tint), var(--wrap-tint));
   background-repeat: no-repeat;
-  background-position: calc(8px + 2ch) 1.5em;
-  background-size: max(0px, var(--hang) - 2ch) max(0px, calc(100% - 1.5em));
+  background-position: calc(var(--cell-pad) + 2ch) 1.5em;
+  background-size: max(0px, var(--hang) - 2ch) calc(100% - 1.5em);
+}
+/* ↵ glyph in the +/-/space column on each continuation row. We put it
+   on a ::before pseudo-element that starts at top:1.5em (so the first
+   visual row is excluded) and tile the SVG vertically inside it —
+   `repeat-y` on the cell itself would tile upward too and bleed onto
+   the first line. */
+body.wrap .diff-table td.content.wrapped::before {
+  content: "";
+  position: absolute;
+  top: 1.5em;
+  bottom: 0;
+  left: var(--cell-pad);
+  width: 2ch;
+  background-image: var(--wrap-arrow);
+  background-repeat: repeat-y;
+  background-size: 2ch 1.5em;
+  background-position: 0 0;
+  pointer-events: none;
 }
 body.wrap .diff-table td.content .line,
 body.wrap .diff-table tr.add td.content .word,
@@ -720,7 +745,7 @@ body.wrap .diff-table tr.del td.content .word {
   /* The page header is fixed at top:0 (49px tall); push the sticky
      file-header below it so the file name isn't covered. */
   .file-header { padding: 6px 8px; font-size: 12px; top: 49px; }
-  .diff-table td { padding: 0 4px; }
+  :root { --cell-pad: 4px; }
   /* Make the +/-/space click target a little easier to hit on touch */
   .diff-table td.content .sym { padding-right: 4px; }
   .comment-thread, .comment-form { font-size: 13px; }
