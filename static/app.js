@@ -378,7 +378,13 @@ function makeCommitRow({id, short, subj, date, title, isWt}, opts) {
   if (state.rangeTo === id) li.classList.add('to-selected');
   if (opts.inDiff) li.classList.add('in-diff');
   const dateStr = isWt ? '' : relativeDate(date);
-  li.innerHTML = `
+  // Anchor with a real href so ctrl/cmd/middle-click opens the commit
+  // in a new tab via the browser's native link handling. WT row uses
+  // an empty hash (= default working-tree view).
+  const link = document.createElement('a');
+  link.className = 'commit-link';
+  link.href = isWt ? '#' : `#mode=commit&sha=${encodeURIComponent(id)}`;
+  link.innerHTML = `
     <div class="row-top">
       <button class="from-btn" title="Use as comparison base (from)">↰</button>
       <button class="to-btn" title="Use as comparison target (to)">↱</button>
@@ -389,12 +395,18 @@ function makeCommitRow({id, short, subj, date, title, isWt}, opts) {
     </div>
     ${isWt ? '' : `<div class="row-bottom"><span class="subj">${escapeHTML(subj)}</span></div>`}
   `;
+  li.appendChild(link);
   if (title) li.title = title;
-  li.querySelector('.from-btn').onclick = (e) => {
+  // Buttons need preventDefault so the wrapping anchor doesn't follow
+  // its href, and stopPropagation so the row's own click handler
+  // doesn't also fire.
+  link.querySelector('.from-btn').onclick = (e) => {
+    e.preventDefault();
     e.stopPropagation();
     toggleRangeEnd('from', id);
   };
-  li.querySelector('.to-btn').onclick = (e) => {
+  link.querySelector('.to-btn').onclick = (e) => {
+    e.preventDefault();
     e.stopPropagation();
     toggleRangeEnd('to', id);
   };
@@ -414,11 +426,13 @@ function renderCommits() {
     { id: WT_ID, isWt: true, title: 'Uncommitted changes' },
     { inDiff: wtInDiff },
   );
-  wt.onclick = () => {
+  wt.querySelector('.commit-link').addEventListener('click', (e) => {
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+    e.preventDefault();
     state.rangeFrom = null;
     state.rangeTo = null;
     setMode('working');
-  };
+  });
   ul.appendChild(wt);
 
   // Suppress the branch-point divider when HEAD == base (no divergence,
@@ -454,7 +468,11 @@ function renderCommits() {
         title: `${c.author} · ${c.date}\n${c.sha}` },
       { inDiff: inDiff.has(c.sha) },
     );
-    li.onclick = async () => {
+    li.querySelector('.commit-link').addEventListener('click', async (e) => {
+      // Modified clicks (ctrl/cmd/shift) and middle-click fall through
+      // to the browser so the commit opens in a new tab/window.
+      if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+      e.preventDefault();
       // Body click on a commit row: quick single-commit view, clearing
       // any half-set from/to selection. Buttons handle range setup.
       state.mode = 'commit';
@@ -467,7 +485,7 @@ function renderCommits() {
       writeHash();
       renderCommits();
       closeSidebarIfMobile();
-    };
+    });
     ul.appendChild(li);
   }
 }

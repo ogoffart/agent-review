@@ -185,11 +185,17 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
   color: var(--text);
 }
 .commit-row {
+  border-left: 3px solid transparent;
+  padding-left: 3px !important;
+}
+/* The clickable area is an <a> so ctrl/cmd/middle-click opens the
+   commit in a new tab via the browser's native handling. */
+.commit-link {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  border-left: 3px solid transparent;
-  padding-left: 3px !important;
+  color: inherit;
+  text-decoration: none;
 }
 .commit-row.in-diff {
   border-left-color: var(--accent);
