@@ -232,23 +232,55 @@ def get_diff(mode: str, base: str | None = None, sha: str | None = None,
     if ignore_ws:
         opts.append("-w")  # --ignore-all-space
     if mode == "working":
+        import time, sys
+        t0 = time.time()
+        def _log(msg):
+            print(f"[wt-debug {time.time() - t0:.3f}s] {msg}", file=sys.stderr, flush=True)
+        _log("start")
         base_ref = base or "HEAD"
         _reject_flaglike(base_ref, "base")
         diff_text = git("diff", *opts, "--end-of-options", base_ref)
+        _log(f"git diff HEAD done, {len(diff_text)} bytes")
         # Include untracked files so they show up in the sidebar too.
         # `git diff --no-index` exits 1 when files differ — expected here.
         untracked = git(
             "ls-files", "--others", "--exclude-standard", "-z",
         ).split("\0")
+        _log(f"ls-files --others done, {len(untracked)} entries")
+        # Cap individual untracked files at 1 MiB: `git diff --no-index`
+        # serializes the whole file as added lines, so one big blob can
+        # balloon the response to hundreds of MB and stall the request.
+        MAX_UNTRACKED_BYTES = 1024 * 1024
+        big = small = errors = 0
         for path in untracked:
             if not path:
                 continue
+            try:
+                size = (REPO / path).stat().st_size
+            except OSError:
+                errors += 1
+                continue
+            if size > MAX_UNTRACKED_BYTES:
+                big += 1
+                _log(f"  big-untracked {size} bytes: {path}")
+                diff_text += (
+                    f"diff --git a/dev/null b/{path}\n"
+                    f"new file mode 100644\n"
+                    f"Binary files /dev/null and b/{path} differ\n"
+                )
+                continue
+            small += 1
+            if small <= 5 or small % 100 == 0:
+                _log(f"  small-untracked {size} bytes: {path}")
             diff_text += git(
                 "diff", *opts, "--no-index", "--",
                 "/dev/null", path, check=False,
             )
+        _log(f"untracked loop done: big={big} small={small} errors={errors}, total diff={len(diff_text)} bytes")
         files = parse_unified_diff(diff_text)
+        _log(f"parse done, {len(files)} files")
         _count_new_lines(files, None)
+        _log("count done")
         return {
             "mode": "working",
             "base": base_ref,
