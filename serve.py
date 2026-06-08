@@ -226,6 +226,95 @@ def _count_new_lines(files: list[dict], new_ref: str | None) -> None:
             pass
 
 
+def _untracked_diff_text(untracked: list[str], opts: list[str]) -> str:
+    """Build the diff text for the untracked-files portion of a working
+    diff. Aggregates any directory that's entirely untracked (e.g.
+    a .pnpm-store/ cache the user forgot to .gitignore) into a single
+    summary entry so one stale cache dir doesn't drown the file list
+    or stall the request. Otherwise each file gets its own entry,
+    with a 1 MiB content cap that falls back to a binary-file stub."""
+    if not untracked:
+        return ""
+    # AGGREGATE_THRESHOLD: a fully-untracked directory with this many
+    # files or more collapses to a single summary entry. Below this we
+    # show the files individually — small new dirs stay readable.
+    AGGREGATE_THRESHOLD = 5
+    MAX_UNTRACKED_BYTES = 1024 * 1024
+
+    # Build the set of dirs that contain at least one tracked file.
+    # Any path component not in this set is the head of a subtree that
+    # is entirely untracked.
+    tracked_dirs: set[str] = set()
+    for t in git("ls-files").splitlines():
+        parts = t.split("/")
+        for i in range(1, len(parts)):
+            tracked_dirs.add("/".join(parts[:i]))
+
+    def top_untracked_dir(path: str) -> str | None:
+        # Returns the highest ancestor of `path` that has no tracked
+        # files in it, or None if the file lives directly inside a
+        # tracked dir (or at repo root).
+        parts = path.split("/")
+        if len(parts) == 1:
+            return None
+        cur = ""
+        for p in parts[:-1]:
+            cur = f"{cur}/{p}" if cur else p
+            if cur not in tracked_dirs:
+                return cur
+        return None
+
+    groups: dict[str, list[str]] = {}
+    loose: list[str] = []
+    for path in untracked:
+        top = top_untracked_dir(path)
+        if top is None:
+            loose.append(path)
+        else:
+            groups.setdefault(top, []).append(path)
+
+    parts: list[str] = []
+
+    def emit_file(path: str) -> None:
+        try:
+            size = (REPO / path).stat().st_size
+        except OSError:
+            return
+        if size > MAX_UNTRACKED_BYTES:
+            parts.append(
+                f"diff --git a/dev/null b/{path}\n"
+                f"new file mode 100644\n"
+                f"Binary files /dev/null and b/{path} differ\n"
+            )
+            return
+        parts.append(git(
+            "diff", *opts, "--no-index", "--",
+            "/dev/null", path, check=False,
+        ))
+
+    for path in loose:
+        emit_file(path)
+
+    for top, paths in groups.items():
+        if len(paths) >= AGGREGATE_THRESHOLD:
+            label = f"{top}/"
+            n = len(paths)
+            body = f"{n} untracked file{'s' if n != 1 else ''}"
+            parts.append(
+                f"diff --git a/dev/null b/{label}\n"
+                f"new file mode 100644\n"
+                f"--- /dev/null\n"
+                f"+++ b/{label}\n"
+                f"@@ -0,0 +1,1 @@\n"
+                f"+{body}\n"
+            )
+        else:
+            for p in paths:
+                emit_file(p)
+
+    return "".join(parts)
+
+
 def get_diff(mode: str, base: str | None = None, sha: str | None = None,
              head: str | None = None, ignore_ws: bool = False) -> dict:
     opts: list[str] = ["--no-color", f"-U{CONTEXT_LINES}"]
@@ -240,34 +329,7 @@ def get_diff(mode: str, base: str | None = None, sha: str | None = None,
         untracked = [p for p in git(
             "ls-files", "--others", "--exclude-standard", "-z",
         ).split("\0") if p]
-        # Two caps protect against repos that have huge or numerous
-        # untracked files (the typical offender is a content-addressed
-        # cache dir like .pnpm-store/ that the user forgot to .gitignore):
-        #   * MAX_UNTRACKED_BYTES — `git diff --no-index` dumps the whole
-        #     file as added lines, so a single big blob balloons the
-        #     response to hundreds of MB.
-        #   * MAX_UNTRACKED_FILES — even small files at thousands of
-        #     entries stall the request through subprocess overhead.
-        # Files past either threshold get a binary-file stub so they
-        # still appear in the sidebar with no content.
-        MAX_UNTRACKED_BYTES = 1024 * 1024
-        MAX_UNTRACKED_FILES = 200
-        for i, path in enumerate(untracked):
-            try:
-                size = (REPO / path).stat().st_size
-            except OSError:
-                continue
-            if i >= MAX_UNTRACKED_FILES or size > MAX_UNTRACKED_BYTES:
-                diff_text += (
-                    f"diff --git a/dev/null b/{path}\n"
-                    f"new file mode 100644\n"
-                    f"Binary files /dev/null and b/{path} differ\n"
-                )
-                continue
-            diff_text += git(
-                "diff", *opts, "--no-index", "--",
-                "/dev/null", path, check=False,
-            )
+        diff_text += _untracked_diff_text(untracked, opts)
         files = parse_unified_diff(diff_text)
         _count_new_lines(files, None)
         return {
